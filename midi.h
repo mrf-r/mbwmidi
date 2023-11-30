@@ -71,18 +71,18 @@ typedef struct {
     MidiMessageT buf[MIDI_TX_BUFFER_SIZE];
     uint16_t buf_wp;
     uint16_t buf_rp;
+    // uint16_t lowest_prio; volatile, no need
+    // uint16_t lowest_prio_pos;
     MidiMessageT sysex_buf[MIDI_TX_SYSEX_BUFFER_SIZE];
     uint16_t sysex_wp;
     uint16_t sysex_rp;
     uint8_t status;
     uint8_t sysex_cn; // current sysex source cable
-#ifdef MIDI_DEBUG
-    uint16_t max_utilization;
-    uint16_t max_syx_utilization;
-    uint32_t max_time;
+    // uint8_t nrpn_cn; // TODO? nrpn source cable (address source, from which data is expected)
+    uint16_t max_utilisation;
+    uint16_t max_syx_utilisation;
     uint32_t messages_flushed;
     uint32_t messages_optimized;
-#endif
 } MidiOutPortContextT;
 
 typedef enum {
