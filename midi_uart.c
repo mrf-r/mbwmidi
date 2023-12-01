@@ -35,7 +35,7 @@ static inline MidiRet mSysexLock(uint8_t cn)
     // TODO: copy from main, delete me
     return 0;
 }
-static inline uint8_t midi_port_read_next(MidiOutPortT* p, MidiMessageT* m)
+static inline uint8_t midiPortReadNext(MidiOutPortT* p, MidiMessageT* m)
 {
     // TODO: copy from main, delete me
     return 0;
@@ -453,7 +453,7 @@ void midiOutUartTranmissionCompleteCallback(MidiOutPortT* p)
     MIDI_ATOMIC_START();
     if (ur->tx_pos == 4) {
     nextmessage:
-        if (midi_port_read_next(p, &m)) {
+        if (midiPortReadNext(p, &m)) {
             mptbms_t params = mptbms[m.cin];
             ur->tx_pos = params.shift;
             ur->message_full = m.full_word << (8 * (params.shift - 1));

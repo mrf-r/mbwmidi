@@ -1,0 +1,32 @@
+#ifndef _MIDI_INTERNALS_H
+#define _MIDI_INTERNALS_H
+
+// cin filtering
+// #define CINBMP_RESERVED1 (1 << 0)
+// #define CINBMP_RESERVED2 (1 << 1)
+#define CINBMP_2BYTESYSTEMCOMMON (1 << 2)
+#define CINBMP_3BYTESYSTEMCOMMON (1 << 3)
+#define CINBMP_SYSEX3BYTES (1 << 4)
+#define CINBMP_SYSEXEND1 (1 << 5)
+#define CINBMP_SYSEXEND2 (1 << 6)
+#define CINBMP_SYSEXEND3 (1 << 7)
+#define CINBMP_NOTEOFF (1 << 8)
+#define CINBMP_NOTEON (1 << 9)
+#define CINBMP_POLYKEYPRESS (1 << 10)
+#define CINBMP_CONTROLCHANGE (1 << 11)
+#define CINBMP_PROGRAMCHANGE (1 << 12)
+#define CINBMP_CHANNELPRESSURE (1 << 13)
+#define CINBMP_PITCHBEND (1 << 14)
+#define CINBMP_SINGLEBYTE (1 << 15)
+
+// out port status
+#define STATUS_SYXLOCK 0x01
+#define STATUS_OPTIMIZATION_DISABLED 0x02
+#define STATUS_OUTPUT_SYX_MODE 0x04
+#define STATUS_NRPNUNDEF 0xC0
+#define STATUS_NRPAHFAIL 0x40
+#define STATUS_NRPALFAIL 0x80
+// out port cn mutex
+#define SYSEX_CN_UNLOCK 0xFF
+
+#endif // _MIDI_INTERNALS_H

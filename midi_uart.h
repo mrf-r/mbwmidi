@@ -1,7 +1,12 @@
 #ifndef _MIDI_UART_H
 #define _MIDI_UART_H
 
-#include "midi.h"
+#include "midi_input.h"
+#include "midi_output.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // TODO: this should be pointed thru MidiOutUartApiT
 typedef struct {
@@ -38,5 +43,9 @@ void midiInUartTap(MidiInPortT* p);
 void midiOutUartInit(MidiOutPortT* p);
 void midiOutUartTranmissionCompleteCallback(MidiOutPortT* p); // transmit next
 void midiOutUartTap(MidiOutPortT* p);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // _MIDI_UART_H
