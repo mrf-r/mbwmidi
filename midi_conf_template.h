@@ -6,7 +6,6 @@
 #include <stdint.h>
 #include <assert.h>
 #define MIDI_ASSERT assert
-#define MIDI_DEBUG DEBUG // TODO do we need it????
 
 #define SAMPLE_RATE 48000
 #define CONTROL_RATE 1500

@@ -174,19 +174,18 @@ uint16_t midiPortFreespaceGet(MidiOutPortT* p)
     return ret;
 }
 
-static inline void mUtilisationUpdate(MidiOutPortContextT* cx, MidiMessageT m)
+static inline void mUtilisationUpdate(MidiOutPortContextT* cx)
 {
-    const uint16_t t_syxs = CINBMP_SYSEX3BYTES | CINBMP_SYSEXEND1 | CINBMP_SYSEXEND2 | CINBMP_SYSEXEND3;
-    if ((t_syxs >> m.cin) & 1) {
-        uint16_t utilisation = ((cx->sysex_wp - cx->sysex_rp) & (MIDI_TX_SYSEX_BUFFER_SIZE - 1)) + 1;
-        if (utilisation > cx->max_syx_utilisation) {
-            cx->max_syx_utilisation = utilisation;
-        }
-    } else {
-        uint16_t utilisation = ((cx->buf_wp - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1)) + 1;
-        if (utilisation > cx->max_utilisation) {
-            cx->max_utilisation = utilisation;
-        }
+    // const uint16_t t_syxs = CINBMP_SYSEX3BYTES | CINBMP_SYSEXEND1 | CINBMP_SYSEXEND2 | CINBMP_SYSEXEND3;
+    // if ((t_syxs >> m.cin) & 1) {
+    uint16_t um;
+    um = ((cx->buf_wp - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1));
+    if (um > cx->max_utilisation) {
+        cx->max_utilisation = um;
+    }
+    uint16_t us = ((cx->sysex_wp - cx->sysex_rp) & (MIDI_TX_SYSEX_BUFFER_SIZE - 1));
+    if (us > cx->max_syx_utilisation) {
+        cx->max_syx_utilisation = us;
     }
 }
 
@@ -201,7 +200,7 @@ MidiRet midiPortWrite(MidiOutPortT* p, MidiMessageT m)
 
     MIDI_ATOMIC_START();
     ret = mPortOptWr[m.cin](cx, m);
-    mUtilisationUpdate(cx, m);
+    mUtilisationUpdate(cx);
     // // start transmission if not already started
     // if (p->type == MIDI_TYPE_UART) {
     //     MidiOutUartApiT* uap = (MidiOutUartApiT*)p->api;
@@ -230,7 +229,7 @@ MidiRet midiPortWriteRaw(MidiOutPortT* p, MidiMessageT m)
         cx->buf_wp = wp;
         ret = MIDI_RET_OK;
     }
-    mUtilisationUpdate(cx, m);
+    mUtilisationUpdate(cx);
 
     // // start transmission if not already started
     // if (p->type == MIDI_TYPE_UART) {
@@ -332,13 +331,21 @@ static inline uint16_t mGetMessagePrio(MidiMessageT m)
     return priority;
 }
 
+
+// TODO: delete debug stuff!!!
+
+
+#include <stdio.h>
 // flush certain position from port buffer
 static inline void mFlushMessage(MidiOutPortContextT* cx, uint16_t pos)
 {
+    // printf("mFlushMessage pos: %d\r\n", pos);
+    // printf("(pos - cx->buf_rp) & MIDI_TX_BUFFER_SIZE: %d\r\n", (pos - cx->buf_rp) & MIDI_TX_BUFFER_SIZE);
+    // printf("(cx->buf_wp - cx->buf_rp) & MIDI_TX_BUFFER_SIZE: %d\r\n", (cx->buf_wp - cx->buf_rp) & MIDI_TX_BUFFER_SIZE);
     MIDI_ASSERT(cx);
     MIDI_ASSERT(pos < MIDI_TX_BUFFER_SIZE);
     // rp <= pos < wp
-    MIDI_ASSERT(((pos - cx->buf_rp) & MIDI_TX_BUFFER_SIZE) < ((cx->buf_wp - cx->buf_rp) & MIDI_TX_BUFFER_SIZE));
+    MIDI_ASSERT(((pos - cx->buf_rp) & MIDI_TX_BUFFER_SIZE) <= ((cx->buf_wp - cx->buf_rp) & MIDI_TX_BUFFER_SIZE));
     cx->messages_flushed++;
 
     // scan and shift form pos to rp
@@ -553,12 +560,6 @@ static MidiRet mOptWr_SyxStaCon(MidiOutPortContextT* cx, MidiMessageT m)
             cx->sysex_cn = m.cn;
             cx->sysex_buf[cx->sysex_wp] = m;
             cx->sysex_wp = wp;
-
-            uint16_t utilisation = ((cx->sysex_wp - cx->sysex_rp) & (MIDI_TX_SYSEX_BUFFER_SIZE - 1)) + 1;
-            if (utilisation > cx->max_syx_utilisation) {
-                cx->max_syx_utilisation = utilisation;
-            }
-
             ret = MIDI_RET_OK;
         }
     }
@@ -573,12 +574,6 @@ static MidiRet mOptWr____SyxEnd(MidiOutPortContextT* cx, MidiMessageT m)
         if (wp != cx->sysex_rp) {
             cx->sysex_buf[cx->sysex_wp] = m;
             cx->sysex_wp = wp;
-
-            uint16_t utilisation = ((cx->sysex_wp - cx->sysex_rp) & (MIDI_TX_SYSEX_BUFFER_SIZE - 1)) + 1;
-            if (utilisation > cx->max_syx_utilisation) {
-                cx->max_syx_utilisation = utilisation;
-            }
-
             ret = MIDI_RET_OK;
         }
         cx->sysex_cn = SYSEX_CN_UNLOCK;
@@ -638,7 +633,7 @@ MidiRet midiPortReadNext(MidiOutPortT* p, MidiMessageT* m)
                 if ((t_syxs >> m->cin) & 0x1) {
                     cx->status |= STATUS_OUTPUT_SYX_MODE;
                 }
-                return MIDI_RET_OK;
+                ret = MIDI_RET_OK;
             }
         }
     }
@@ -653,4 +648,4 @@ MidiRet midiPortReadNext(MidiOutPortT* p, MidiMessageT* m)
 
 #if (MIDI_TX_SYSEX_BUFFER_SIZE & (MIDI_TX_SYSEX_BUFFER_SIZE - 1)) != 0
 #error "output sysex buffer: please, use only power of 2"
-#endif 
+#endif

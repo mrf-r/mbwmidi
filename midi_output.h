@@ -29,9 +29,10 @@ typedef struct {
     uint32_t messages_optimized;
 } MidiOutPortContextT;
 
-typedef const struct midi_portout {
+typedef const struct {
     MidiOutPortContextT* context;
-    const void* api;
+    // TODO: why api is needed???
+    const void* api; // defined by type
     const char* name;
     uint8_t type;
     uint8_t cn;

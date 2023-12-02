@@ -1,16 +1,15 @@
 #include "../midi.h"
+#include "../midi_input.h"
 #include "test.h"
-
-extern volatile uint32_t counter_sr;
 
 static void mainBufferTests()
 {
     TEST_NEW_BLOCK("main input buffer");
     midiInit();
     MidiMessageT mm;
-    counter_sr = 0x11223344;
+    test_clock = 0x11223344;
     mm.cin = MIDI_CIN_PITCHBEND;
-    mm.cn = MIDI_CN_LOCAL;
+    mm.cn = MIDI_CN_TEST1;
     mm.byte1 = mm.cin << 4; // 0th  channel
     mm.byte2 = 0x44;
     mm.byte3 = 0x55;
@@ -20,7 +19,7 @@ static void mainBufferTests()
     TEST_ASSERT(midiSysexUtilisationGet() == 0);
     TEST_ASSERT(MIDI_RET_OK == midiRead(&mts));
     TEST_ASSERT(mts.mes.full_word == mm.full_word);
-    TEST_ASSERT(mts.timestamp == counter_sr);
+    TEST_ASSERT(mts.timestamp == test_clock);
     TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mts));
 
     for (int i = 0; i < 16; i++) {
@@ -36,7 +35,7 @@ static void mainBufferTests()
     }
     // buffer cycling
     for (int i = 0; i < 800; i++) {
-        counter_sr = i;
+        test_clock = i;
         TEST_ASSERT_int(MIDI_RET_OK == midiWrite(mm), i);
         TEST_ASSERT_int(MIDI_RET_OK == midiRead(&mts), i);
         TEST_ASSERT(mts.timestamp == i);
@@ -66,8 +65,25 @@ static void mainBufferTests()
     TEST_ASSERT(MIDI_RET_OK == midiRead(&mts));
     TEST_ASSERT(mts.timestamp == 0x5758595A);
 
-    TEST_TODO("midiNonSysexWrite");
-    TEST_TODO("Flush");
-    TEST_TODO("atomic?  ");
+    // midiInit();
+    mm.byte3 = 16;
+    TEST_ASSERT(MIDI_RET_OK == midiNonSysexWrite(mm));
+    mm.byte3 = 17;
+    TEST_ASSERT(MIDI_RET_OK == midiNonSysexWrite(mm));
+    mm.byte3 = 18;
+    TEST_ASSERT(MIDI_RET_OK == midiNonSysexWrite(mm));
+    TEST_ASSERT(MIDI_RET_OK == midiRead(&mts));
+    TEST_ASSERT(16 == mts.mes.byte3);
+    TEST_ASSERT(MIDI_RET_OK == midiRead(&mts));
+    TEST_ASSERT(17 == mts.mes.byte3);
+    TEST_ASSERT(MIDI_RET_OK == midiRead(&mts));
+    TEST_ASSERT(18 == mts.mes.byte3);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mts));
+
+    TEST_ASSERT(MIDI_RET_OK == midiNonSysexWrite(mm));
+    midiFlush();
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mts));
+    
+    TEST_TODO("atomic was not tested!");
     // TODO noteoff
 }

@@ -1,4 +1,3 @@
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -14,6 +13,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "midi_uart.h"
+#include "midi_internals.h"
 
 static inline MidiRet mBufferWrite(MidiTsMessageT m)
 {
@@ -35,11 +35,11 @@ static inline MidiRet mSysexLock(uint8_t cn)
     // TODO: copy from main, delete me
     return 0;
 }
-static inline uint8_t midiPortReadNext(MidiOutPortT* p, MidiMessageT* m)
-{
-    // TODO: copy from main, delete me
-    return 0;
-}
+// inline MidiRet midiPortReadNext(MidiOutPortT* p, MidiMessageT* m)
+// {
+//     // TODO: copy from main, delete me
+//     return 0;
+// }
 static inline uint8_t midi_port_check_rt(MidiOutPortT* p, MidiMessageT* m)
 {
     // TODO: copy from main, delete me
@@ -495,9 +495,6 @@ void midiOutUartTranmissionCompleteCallback(MidiOutPortT* p)
     MIDI_ATOMIC_END();
 }
 
-// TODO : remove that doubling
-#define STATUS_OUTPUT_SYX_MODE 0x04
-#warning "bad code here"
 
 // uart output handling daemon
 // must be called with strict timings
