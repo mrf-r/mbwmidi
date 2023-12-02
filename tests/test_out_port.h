@@ -1,4 +1,3 @@
-#include "../midi.h"
 #include "../midi_output.h"
 #include "test.h"
 

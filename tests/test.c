@@ -1,5 +1,3 @@
-
-#include "../midi.h"
 #include "test.h"
 
 TEST_GLOBAL_VARIABLES
@@ -9,6 +7,8 @@ volatile uint32_t test_clock;
 #include "test_main_buffer.h"
 #include "test_main_sysex.h"
 #include "test_out_port.h"
+#include "test_out_port_prio.h"
+// #include "test_out_port_optim.h"
 
 int main()
 {

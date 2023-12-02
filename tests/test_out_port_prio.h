@@ -1,8 +1,7 @@
-#include "../midi.h"
 #include "../midi_output.h"
 #include "test.h"
 
-static void outPortTests()
+static void outPortTests_prio()
 {
     MidiOutPortContextT test_port_context;
 

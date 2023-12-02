@@ -14,22 +14,22 @@ typedef unsigned MidiRet;
 #define MIDI_RET_FAIL 0x0
 
 typedef enum {
-    MIDI_CIN_RESERVED1 = 0, // 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.        | not used at all
-    MIDI_CIN_RESERVED2, // 0x1 1, 2 or 3 Cable events. Reserved for future expansion.                         | not used at all
-    MIDI_CIN_2BYTESYSTEMCOMMON, // 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.                   | systemonly
-    MIDI_CIN_3BYTESYSTEMCOMMON, // 0x3 3 Three-byte System Common messages like SPP, etc.                             | systemonly
-    MIDI_CIN_SYSEX3BYTES, // 0x4 3 SysEx starts or continues                                                    | maybe seq, or systemonly
-    MIDI_CIN_SYSEXEND1, // 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.  | maybe seq, or systemonly
-    MIDI_CIN_SYSEXEND2, // 0x6 2 SysEx ends with following two bytes.                                         | maybe seq, or systemonly
-    MIDI_CIN_SYSEXEND3, // 0x7 3 SysEx ends with following three bytes.                                       | maybe seq, or systemonly
-    MIDI_CIN_NOTEOFF, // 0x8 3 Note-off                                                                     | seq
-    MIDI_CIN_NOTEON, // 0x9 3 Note-on                                                                      | seq
-    MIDI_CIN_POLYKEYPRESS, // 0xA 3 Poly-KeyPress                                                                | seq
-    MIDI_CIN_CONTROLCHANGE, // 0xB 3 Control Change                                                               | seq
-    MIDI_CIN_PROGRAMCHANGE, // 0xC 2 Program Change                                                               | seq
-    MIDI_CIN_CHANNELPRESSURE, // 0xD 2 Channel Pressure                                                             | seq
-    MIDI_CIN_PITCHBEND, // 0xE 3 PitchBend Change                                                             | seq
-    MIDI_CIN_SINGLEBYTE // 0xF 1 Single Byte                                                                  | systemonly
+    MIDI_CIN_RESERVED1 = 0, //     0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.
+    MIDI_CIN_RESERVED2, //         0x1 1, 2 or 3 Cable events. Reserved for future expansion.
+    MIDI_CIN_2BYTESYSTEMCOMMON, // 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.
+    MIDI_CIN_3BYTESYSTEMCOMMON, // 0x3 3 Three-byte System Common messages like SPP, etc.
+    MIDI_CIN_SYSEX3BYTES, //       0x4 3 SysEx starts or continues
+    MIDI_CIN_SYSEXEND1, //         0x5 1 Single-byte System Common Message or SysEx ends with following single byte.
+    MIDI_CIN_SYSEXEND2, //         0x6 2 SysEx ends with following two bytes.
+    MIDI_CIN_SYSEXEND3, //         0x7 3 SysEx ends with following three bytes.
+    MIDI_CIN_NOTEOFF, //           0x8 3 Note-off
+    MIDI_CIN_NOTEON, //            0x9 3 Note-on
+    MIDI_CIN_POLYKEYPRESS, //      0xA 3 Poly-KeyPress
+    MIDI_CIN_CONTROLCHANGE, //     0xB 3 Control Change
+    MIDI_CIN_PROGRAMCHANGE, //     0xC 2 Program Change
+    MIDI_CIN_CHANNELPRESSURE, //   0xD 2 Channel Pressure
+    MIDI_CIN_PITCHBEND, //         0xE 3 PitchBend Change
+    MIDI_CIN_SINGLEBYTE //         0xF 1 Single Byte
 } MidiCinEn;
 
 // THIS IS STANDART USB MIDI 1.0 MESSAGE
