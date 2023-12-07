@@ -18,6 +18,7 @@ int main()
     mainBufferTests();
     mainSysexTests();
     outPortTests();
+    outPortTests_prio();
     TEST_RESULTS();
     return tests_result_not_passed;
 }

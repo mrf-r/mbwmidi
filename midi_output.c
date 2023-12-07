@@ -331,9 +331,7 @@ static inline uint16_t mGetMessagePrio(MidiMessageT m)
     return priority;
 }
 
-
 // TODO: delete debug stuff!!!
-
 
 #include <stdio.h>
 // flush certain position from port buffer
@@ -356,9 +354,9 @@ static inline void mFlushMessage(MidiOutPortContextT* cx, uint16_t pos)
 }
 
 // return MIDI_RET_OK if there is available space in buffer
-static inline MidiRet mFlushLowestPrio(MidiOutPortContextT* cx, uint16_t new_prio)
+static inline MidiRet mFlushLowestPrio_DEPRECATED(MidiOutPortContextT* cx, uint16_t new_prio)
 {
-    MidiRet ret = MIDI_RET_FAIL;
+    MidiRet ret = MIDI_RET_FAIL; // a.k.a. buffer is full
     uint16_t lowest_prio = new_prio;
     uint16_t lowest_prio_pos;
 
@@ -380,6 +378,35 @@ static inline MidiRet mFlushLowestPrio(MidiOutPortContextT* cx, uint16_t new_pri
     } else {
         return MIDI_RET_OK;
     }
+}
+
+// return MIDI_RET_OK if there is available space in buffer
+static inline MidiRet mCheckBufferSpace(MidiOutPortContextT* cx, uint16_t new_prio)
+{
+    // in this implementation, priorities are not related to the buffer size
+    // and can be arbitrary numbers. however they still use MIDI_TX_BUFFER_SIZE
+    // as a reference
+    MidiRet ret = MIDI_RET_OK;
+    uint16_t utilisation = ((cx->buf_wp - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1));
+
+    if ((MIDI_TX_BUFFER_SIZE - 1) <= utilisation) {
+        uint16_t lowest_prio = 0xFFFF;
+        uint16_t lowest_prio_pos;
+        for (uint16_t i = cx->buf_rp; i != cx->buf_wp; i = (i + 1) & (MIDI_TX_BUFFER_SIZE - 1)) {
+            uint16_t prio = mGetMessagePrio(cx->buf[i]);
+            if (prio < lowest_prio) { // oldest will be flushed
+                lowest_prio = prio;
+                lowest_prio_pos = i;
+            }
+        }
+        if (lowest_prio <= new_prio) { // oldest will be flushed
+            mFlushMessage(cx, lowest_prio_pos);
+        } else {
+            cx->messages_flushed++;
+            ret = MIDI_RET_FAIL;
+        }
+    }
+    return ret;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -483,7 +510,7 @@ static MidiRet mOptWr________CC(MidiOutPortContextT* cx, MidiMessageT m)
 
     // 3rd stage - prio filtering
     MidiRet ret = MIDI_RET_FAIL;
-    if (MIDI_RET_OK == mFlushLowestPrio(cx, mGetMessagePrio(m))) {
+    if (MIDI_RET_OK == mCheckBufferSpace(cx, mGetMessagePrio(m))) {
         cx->buf[cx->buf_wp] = m;
         cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
         cx->status &= ~status_addr;
@@ -517,7 +544,7 @@ static MidiRet mOptWr___Regular(MidiOutPortContextT* cx, MidiMessageT m)
 
     // filter by priority
     MidiRet ret = MIDI_RET_FAIL;
-    if (MIDI_RET_OK == mFlushLowestPrio(cx, mGetMessagePrio(m))) {
+    if (MIDI_RET_OK == mCheckBufferSpace(cx, mGetMessagePrio(m))) {
         cx->buf[cx->buf_wp] = m;
         cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
         ret = MIDI_RET_OK;
@@ -532,7 +559,7 @@ static MidiRet mOptWr___Regular(MidiOutPortContextT* cx, MidiMessageT m)
 static MidiRet mOptWr____Single(MidiOutPortContextT* cx, MidiMessageT m)
 {
     MidiRet ret = MIDI_RET_FAIL;
-    if (MIDI_RET_OK == mFlushLowestPrio(cx, m_cin_priorities[MIDI_CIN_SINGLEBYTE])) {
+    if (MIDI_RET_OK == mCheckBufferSpace(cx, m_cin_priorities[MIDI_CIN_SINGLEBYTE])) {
         for (uint16_t i = cx->buf_rp; i != cx->buf_wp; i = (i + 1) & (MIDI_TX_BUFFER_SIZE - 1)) {
             const unsigned t_rt = CINBMP_SINGLEBYTE | CINBMP_2BYTESYSTEMCOMMON | CINBMP_3BYTESYSTEMCOMMON;
             if ((t_rt >> cx->buf[i].cin) & 1) {

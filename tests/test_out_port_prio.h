@@ -59,54 +59,77 @@ static void outPortTests_prio()
     TEST_ASSERT(MIDI_TX_SYSEX_BUFFER_SIZE == 16);
     MidiMessageT mm = {
         .cn = MIDI_CN_TEST0,
-        .cin = MIDI_CIN_PITCHBEND,
-        .byte1 = MIDI_CIN_PITCHBEND << 4,
-        .byte2 = 0x33,
-        .byte3 = 0x44
-    };
-    MidiMessageT mm2 = {
-        .cn = MIDI_CN_TEST0,
         .cin = MIDI_CIN_POLYKEYPRESS,
-        .byte1 = MIDI_CIN_POLYKEYPRESS << 4,
-        .byte2 = 0x33,
-        .byte3 = 0x44
-    };
-    MidiMessageT ms = {
-        .cn = MIDI_CN_TEST0,
-        .cin = MIDI_CIN_SYSEXEND2,
-        .byte1 = 0x77, // anyway it does not check that
-        .byte2 = 0x88, // only uart/com will notice wrong bytes
-        .byte3 = 0x99
-    };
-    MidiMessageT ms2 = {
-        .cn = MIDI_CN_TEST2,
-        .cin = MIDI_CIN_SYSEX3BYTES,
-        .byte1 = 0x77, // anyway it does not check that
-        .byte2 = 0x88, // only uart/com will notice wrong bytes
-        .byte3 = 0x99
+        .byte1 = 0x11,
+        .byte2 = 0x22,
+        .byte3 = 0x33
     };
     MidiMessageT mr;
 
     midiPortInit(&test_port);
-    
-    // midiPortFlush(&test_port);
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
-    // overflow 2 - again, it is harder, because of filtering!!
-    // mm.cin = MIDI_CIN_SINGLEBYTE;
-    mm.cin = MIDI_CIN_3BYTESYSTEMCOMMON;
-    // printf("debug: %d %d %d" ENDLINE, test_port_context.max_utilisation, test_port_context.buf_rp, test_port_context.buf_wp);
+    // test prio
+    mm.cin = MIDI_CIN_POLYKEYPRESS;
     for (int i = 0; i < 40; i++) {
         mm.byte2 = i;
-        TEST_ASSERT_int(((i < 31) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
-        printf("debug: %d %d %d" ENDLINE, test_port_context.max_utilisation, test_port_context.buf_rp, test_port_context.buf_wp);
+        // TEST_ASSERT_int(((i < m_cin_priorities[mm.cin]) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
+        // TEST_ASSERT_int(((i < (MIDI_TX_BUFFER_SIZE-1)) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
     }
-    for (int i = 0; i < 31; i++) {
-        TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
-        TEST_ASSERT_int(mr.byte2 == i, i);
+    for (int i = 0; i < 40; i++) {
+        // if (i < m_cin_priorities[mm.cin]) {
+        if (i < (MIDI_TX_BUFFER_SIZE - 1)) {
+            TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
+            TEST_ASSERT_int(mr.byte2 == i + 9, i);
+        } else {
+            TEST_ASSERT_int(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr), i);
+        }
     }
-    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////
+    mm.cin = MIDI_CIN_POLYKEYPRESS;
+    for (int i = 0; i < 40; i++) {
+        mm.byte2 = i;
+        // TEST_ASSERT_int(((i < m_cin_priorities[mm.cin]) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
+        // TEST_ASSERT_int(((i < (MIDI_TX_BUFFER_SIZE - 1)) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
+    }
+    // now there should be 10..40
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    printf("debug: %d %d %d" ENDLINE, mr.byte2, mr.cin, 0);
 
-    
+    mm.byte2 = 0x7F;
+    mm.cin = MIDI_CIN_CHANNELPRESSURE;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.cin = MIDI_CIN_PITCHBEND;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.cin = MIDI_CIN_NOTEON;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.cin = MIDI_CIN_PROGRAMCHANGE;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x22;
+    mm.cin = MIDI_CIN_PROGRAMCHANGE;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.cin = MIDI_CIN_NOTEOFF;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x23;
+    mm.cin = MIDI_CIN_NOTEOFF;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x24;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x25;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    // utilisation is == lowest prio == polykp
+    TEST_ASSERT((MIDI_TX_BUFFER_SIZE - 1) == midiPortMaxUtilisation(&test_port));
+
+    // TODO: same prio CC with others - who wins?!
+
+    // midiPortFlush(&test_port);
+    // overflow 2 - again, it is harder, because of filtering!!
+    // mm.cin = MIDI_CIN_SINGLEBYTE;
+    // mm.cin = MIDI_CIN_3BYTESYSTEMCOMMON;
+    // // printf("debug: %d %d %d" ENDLINE, test_port_context.max_utilisation, test_port_context.buf_rp, test_port_context.buf_wp);
+    // printf("debug: %d %d %d" ENDLINE, test_port_context.max_utilisation, test_port_context.buf_rp, test_port_context.buf_wp);
+
     // TEST_ASSERT(3 == midiPortUtilisation(&test_port));
     // TEST_ASSERT(3 == midiPortSysexUtilisation(&test_port));
 
@@ -163,5 +186,7 @@ static void outPortTests_prio()
     // TEST_TODO("        - is always on top");
     // TEST_TODO("        - is always on top");
 
+    // TEST_TODO("        - messages flushed");
+    // TEST_TODO("        - messages optimized");
     // sysex lock
 }

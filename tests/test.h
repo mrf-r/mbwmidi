@@ -7,8 +7,8 @@
 #define TESTS_SHOW_PASSED 0
 #endif
 
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #define ANSI_COLOR_RED "\x1b[31m"
 #define ANSI_COLOR_GREEN "\x1b[32m"
@@ -29,9 +29,9 @@ extern int tests_failed;
 extern int tests_result_not_passed;
 
 #define TEST_GLOBAL_VARIABLES \
-    int tests_total = 0;                 \
-    int tests_passed = 0;                \
-    int tests_failed = 0;                \
+    int tests_total = 0;      \
+    int tests_passed = 0;     \
+    int tests_failed = 0;     \
     int tests_result_not_passed = 0;
 
 #define TEST_ASSERT(value)                                                           \
@@ -74,8 +74,8 @@ extern int tests_result_not_passed;
         } else {                                                                          \
             tests_failed++;                                                               \
             tests_result_not_passed |= 1;                                                 \
-            printf(ANSI_COLOR_RED "FAILED: " STRINGIFY0(value) " - %d" /*ENDLINE*/, i);   \
-            printf(" - %s:%d" ENDLINE, __FILE__, __LINE__);                               \
+            printf(ANSI_COLOR_RED "FAILED: " STRINGIFY0(value) /*ENDLINE*/);              \
+            printf(" - %s:%d - %d" ENDLINE, __FILE__, __LINE__, i);                       \
         }                                                                                 \
     } while (0)
 
