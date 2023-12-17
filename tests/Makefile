@@ -21,6 +21,7 @@ FLAGS_C :=
 FLAGS_C += $(addprefix -I,$(DIRS_INCLUDE))
 #FLAGS_C += -std=gnu11
 # FLAGS_C += -O3
+FLAGS_C += -g3
 FLAGS_C += -Wall -Wpedantic
 
 #######################################

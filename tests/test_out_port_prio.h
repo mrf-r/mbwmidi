@@ -1,6 +1,31 @@
 #include "../midi_output.h"
 #include "test.h"
 
+__attribute__((unused)) static void printBuffer(MidiOutPortContextT* cx)
+{
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE; i++) {
+        if (i == cx->buf_rp) {
+            if (i == cx->buf_wp)
+                printf(ANSI_COLOR_CYAN);
+            else
+                printf(ANSI_COLOR_GREEN);
+        } else if (i == cx->buf_wp) {
+            printf(ANSI_COLOR_RED);
+        } else if (((i - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1)) <= ((cx->buf_wp - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1))) {
+            printf(ANSI_COLOR_YELLOW);
+        } else {
+            printf(ANSI_COLOR_RESET);
+        }
+        printf("%02X ", cx->buf[i].byte2);
+    }
+    printf(ANSI_COLOR_RESET ENDLINE);
+}
+
+// #define PBUF(cx) printBuffer(&cx)
+#define PBUF(...);
+
+// rp 8, wp 9, i = 11
+
 static void outPortTests_prio()
 {
     MidiOutPortContextT test_port_context;
@@ -74,10 +99,12 @@ static void outPortTests_prio()
         mm.byte2 = i;
         // TEST_ASSERT_int(((i < m_cin_priorities[mm.cin]) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
         // TEST_ASSERT_int(((i < (MIDI_TX_BUFFER_SIZE-1)) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
+        PBUF(test_port_context);
         TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
     }
     for (int i = 0; i < 40; i++) {
         // if (i < m_cin_priorities[mm.cin]) {
+        PBUF(test_port_context);
         if (i < (MIDI_TX_BUFFER_SIZE - 1)) {
             TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
             TEST_ASSERT_int(mr.byte2 == i + 9, i);
@@ -85,44 +112,196 @@ static void outPortTests_prio()
             TEST_ASSERT_int(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr), i);
         }
     }
+    printf(ENDLINE);
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
     mm.cin = MIDI_CIN_POLYKEYPRESS;
     for (int i = 0; i < 40; i++) {
         mm.byte2 = i;
         // TEST_ASSERT_int(((i < m_cin_priorities[mm.cin]) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
         // TEST_ASSERT_int(((i < (MIDI_TX_BUFFER_SIZE - 1)) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
+        PBUF(test_port_context);
         TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
     }
     // now there should be 10..40
-    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
-    printf("debug: %d %d %d" ENDLINE, mr.byte2, mr.cin, 0);
+    printf(ENDLINE);
 
-    mm.byte2 = 0x7F;
-    mm.cin = MIDI_CIN_CHANNELPRESSURE;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    mm.cin = MIDI_CIN_PITCHBEND;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    mm.cin = MIDI_CIN_NOTEON;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    mm.cin = MIDI_CIN_PROGRAMCHANGE;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    mm.byte2 = 0x22;
-    mm.cin = MIDI_CIN_PROGRAMCHANGE;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    mm.cin = MIDI_CIN_NOTEOFF;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    mm.byte2 = 0x23;
-    mm.cin = MIDI_CIN_NOTEOFF;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    mm.byte2 = 0x24;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    mm.byte2 = 0x25;
-    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
-    // utilisation is == lowest prio == polykp
+    MidiMessageT stream[] = {
+        { .cin = MIDI_CIN_POLYKEYPRESS, .miditype = MIDI_CIN_POLYKEYPRESS, .byte2 = 0x7f, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_CHANNELPRESSURE, .miditype = MIDI_CIN_CHANNELPRESSURE, .byte2 = 0x7f, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_PITCHBEND, .miditype = MIDI_CIN_PITCHBEND, .byte2 = 0x7f, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_NOTEON, .miditype = MIDI_CIN_NOTEON, .byte2 = 0x70, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_PROGRAMCHANGE, .miditype = MIDI_CIN_PROGRAMCHANGE, .byte2 = 0xAA, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_PROGRAMCHANGE, .miditype = MIDI_CIN_PROGRAMCHANGE, .midichannel = 2, .byte2 = 0xBB, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_NOTEOFF, .miditype = MIDI_CIN_NOTEOFF, .byte2 = 0x7f, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_NOTEOFF, .miditype = MIDI_CIN_NOTEOFF, .byte2 = 0x7e, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_NOTEOFF, .miditype = MIDI_CIN_NOTEOFF, .byte2 = 0x7d, .byte3 = 0x33 },
+        { .cin = MIDI_CIN_NOTEOFF, .miditype = MIDI_CIN_NOTEOFF, .byte2 = 0x7c, .byte3 = 0x33 },
+    };
+    size_t len = sizeof(stream) / sizeof(stream[1]);
+
+    for (int i = 0; i < len; i++) {
+        PBUF(test_port_context);
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, stream[i]), i);
+    }
+
     TEST_ASSERT((MIDI_TX_BUFFER_SIZE - 1) == midiPortMaxUtilisation(&test_port));
+    TEST_ASSERT(0 == test_port_context.messages_optimized);
 
-    // TODO: same prio CC with others - who wins?!
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE - len - 1; i++) {
+        PBUF(test_port_context);
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
+        TEST_ASSERT_int(40 - MIDI_TX_BUFFER_SIZE + len + 1 + i == mr.byte2, i);
+    }
+    for (int i = 0; i < len; i++) {
+        PBUF(test_port_context);
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
+        // printf("debug: %08X %08X %d" ENDLINE, stream[i].full_word, mr.full_word, 0);
+        TEST_ASSERT_int((stream[i].full_word | (test_port.cn << 4)) == mr.full_word, i);
+    }
 
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // for each of the priority check that the lowest will not overwrite it
+
+    // dirty hack to test rt branch
+    test_port_context.buf[test_port_context.buf_rp].cin = MIDI_CIN_SINGLEBYTE;
+    mm.miditype = mm.cin = MIDI_CIN_SINGLEBYTE;
+    mm.midichannel = 8;
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE; i++) {
+        PBUF(test_port_context);
+        mm.byte2 = i;
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
+    }
+    for (int i = 0; i < len; i++) {
+        TEST_ASSERT_int(MIDI_RET_FAIL == midiPortWrite(&test_port, stream[i]), i);
+    }
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(1 == mr.byte2);
+    printf(ENDLINE);
+
+    // now we have spece for only one message
+
+    for (int i = 0; i < len; i++) {
+        PBUF(test_port_context);
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, stream[i]), i);
+        if (i - 1 >= 0) {
+            PBUF(test_port_context);
+            if (stream[i - 1].cin != stream[i].cin)
+                TEST_ASSERT_int(MIDI_RET_FAIL == midiPortWrite(&test_port, stream[i - 1]), i);
+        }
+        // if (i + 1 < len) {
+        //     PBUF(test_port_context);
+        //     TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, stream[i + 1]), i);
+        // }
+        TEST_ASSERT_int(0 == test_port_context.messages_optimized, i);
+        // printf("debug: %d %d %d" ENDLINE, test_port_context.messages_optimized, 0, 0);
+    }
+
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE - 2; i++) {
+        PBUF(test_port_context);
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
+        TEST_ASSERT_int(2 + i == mr.byte2, i);
+    }
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(stream[len - 1].full_word == (mr.full_word & 0xFFFFFF0F));
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+    printf(ENDLINE);
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////
+    MidiMessageT mm_cc_damper = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 64, .byte3 = 64 };
+    MidiMessageT mm_cc_modwheel_msb = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 1, .byte3 = 64 };
+    MidiMessageT mm_cc_modwheel_lsb = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 0x20 + 1, .byte3 = 64 };
+    MidiMessageT mm_cc_data_msb = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 6, .byte3 = 64 };
+    MidiMessageT mm_cc_data_lsb = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 0x20 + 6, .byte3 = 64 };
+    // MidiMessageT mm_cc_data_inc = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 96, .byte3 = 64 };
+    // MidiMessageT mm_cc_data_dec = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 97, .byte3 = 64 };
+    // MidiMessageT mm_cc_rpn_lsb = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 98, .byte3 = 64 };
+    MidiMessageT mm_cc_rpn_msb = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 99, .byte3 = 64 };
+    MidiMessageT mm_cc_nrpn_lsb = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 100, .byte3 = 64 };
+    // MidiMessageT mm_cc_nrpn_msb = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 101, .byte3 = 64 };
+    MidiMessageT mm_cc_aso = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 120, .byte3 = 64 };
+    MidiMessageT mm_cc_ano = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 123, .byte3 = 64 };
+    MidiMessageT mm_pbwh = { .cin = MIDI_CIN_PITCHBEND, .miditype = MIDI_CIN_PITCHBEND, .byte2 = 64, .byte3 = 64 };
+    MidiMessageT mm_noteon = { .cin = MIDI_CIN_NOTEON, .miditype = MIDI_CIN_NOTEON, .byte2 = 64, .byte3 = 64 };
+    MidiMessageT mm_pc = { .cin = MIDI_CIN_PROGRAMCHANGE, .miditype = MIDI_CIN_PROGRAMCHANGE, .byte2 = 64, .byte3 = 64 };
+    MidiMessageT mm_pressure = { .cin = MIDI_CIN_CHANNELPRESSURE, .miditype = MIDI_CIN_CHANNELPRESSURE, .byte2 = 64, .byte3 = 64 };
+
+    mm.miditype = mm.cin = MIDI_CIN_SINGLEBYTE;
+    mm.midichannel = 8;
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE - 2; i++) {
+        mm.byte2 = i;
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
+    }
+    PBUF(test_port_context);
+    // same prio CC with others - who wins?!
+    // cc msb = noteon
+    // cc = pitchbend
+    // cc special = pc
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_modwheel_lsb));
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm_pressure));
+    TEST_ASSERT(mm_cc_modwheel_lsb.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_pbwh));
+    TEST_ASSERT(mm_pbwh.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm_cc_data_lsb)); // because addr is undefined!!!
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_modwheel_lsb));
+    TEST_ASSERT(mm_cc_modwheel_lsb.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_modwheel_msb));
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm_cc_modwheel_lsb));
+    TEST_ASSERT(mm_cc_modwheel_msb.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_noteon));
+    TEST_ASSERT(mm_noteon.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm_cc_data_msb));  // because addr is undefined!!!
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_modwheel_msb));
+    TEST_ASSERT(mm_cc_modwheel_msb.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_ano));
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm_cc_modwheel_msb));
+    TEST_ASSERT(mm_cc_ano.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_pc));
+    TEST_ASSERT(mm_pc.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_aso));
+    TEST_ASSERT(mm_cc_aso.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_damper));
+    TEST_ASSERT(mm_cc_damper.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_nrpn_lsb));
+    TEST_ASSERT(mm_cc_nrpn_lsb.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm_cc_rpn_msb));
+    TEST_ASSERT(mm_cc_rpn_msb.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    PBUF(test_port_context);
+
+    // printf("debug: %08X" ENDLINE, test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    // printf("debug: %08X" ENDLINE, test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    // printf("debug: %08X" ENDLINE, test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
+    // prio 2BYTESYSTEMCOMMON: 30
+    // prio 3BYTESYSTEMCOMMON: 30
+    // prio SINGLEBYTE       : 30
+    // prio NOTEOFF          : 26
+    // prio PROGRAMCHANGE    : 20
+    // prio NOTEON           : 18
+    // prio PITCHBEND        : 17
+    // prio CHANNELPRESSURE  : 16
+    // prio POLYKEYPRESS     : 15
+    // prio CONTROLCHANGE    : 26
+    // prio CC MSB           : 18
+    // prio CC regular       : 17
+    // prio CC special       : 20
+
+
+    // printf("debug: %08X" ENDLINE, mr.full_word);
+    // printf("debug: %08X" ENDLINE, stream[len - 1].full_word);
+
+    // printf("debug: %d %d %d" ENDLINE, test_port_context.messages_optimized, 0, 0);
     // midiPortFlush(&test_port);
     // overflow 2 - again, it is harder, because of filtering!!
     // mm.cin = MIDI_CIN_SINGLEBYTE;
@@ -136,6 +315,8 @@ static void outPortTests_prio()
     // TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
     // TEST_ASSERT(mr.byte2 == 0x77);
 
+    printf(ENDLINE);
+    PBUF(test_port_context);
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -22,7 +22,14 @@ typedef struct {
     uint16_t sysex_rp;
     uint8_t status;
     uint8_t sysex_cn; // current sysex source cable
-    // uint8_t nrpn_cn; // TODO? nrpn source cable (address source, from which data is expected)
+    // we assume that nrpn bulks are always atomic
+    // so there is no need to save the source cn
+    // uint8_t nrpn_cn;
+    uint8_t nrpn_lsb;
+    uint8_t nrpn_msb;
+    uint32_t nrpn_lsb_time;
+    uint32_t nrpn_msb_time;
+    // diagnostic stuff. TODO: add conditionals
     uint16_t max_utilisation;
     uint16_t max_syx_utilisation;
     uint32_t messages_flushed;

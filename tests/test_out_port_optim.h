@@ -13,6 +13,9 @@ static void outPortTests_optim()
         .cn = 0x9
     };
     TEST_NEW_BLOCK("out port optim");
+    TEST_TODO("cc sequence reordering - overwrite or delete+add");
+    TEST_TODO("other messages reordering - overwrite or delete+add");
+    TEST_TODO("status should not be modified by flushed message");
 
     TEST_ASSERT(MIDI_TX_BUFFER_SIZE == 32);
     TEST_ASSERT(MIDI_TX_SYSEX_BUFFER_SIZE == 16);
@@ -47,4 +50,5 @@ static void outPortTests_optim()
     MidiMessageT mr;
 
     midiPortInit(&test_port);
+    // remember, that noteon and noteoff are special case and almost is the one
 }

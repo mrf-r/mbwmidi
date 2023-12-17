@@ -16,7 +16,7 @@ extern volatile uint32_t counter_sr;
 
 // TODO: use this
 #define MIDI_GET_CLOCK() (counter_sr)
-#define MIDI_GET_CLOCK_RATE() (SAMPLE_RATE)
+#define MIDI_GET_CLOCK_RATE (SAMPLE_RATE)
 
 
 #endif // _MIDI_CONF_H

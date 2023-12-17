@@ -1,6 +1,8 @@
 #include "midi_output.h"
 #include "midi_internals.h"
 
+#define MIDI_TX_NRPN_LIFETIME_TICKS ((uint32_t)(MIDI_GET_CLOCK_RATE * 2)) // 2 seconds probably ok
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -138,7 +140,7 @@ void midiPortInit(MidiOutPortT* p)
     MIDI_ATOMIC_START();
     cx->buf_rp = 0;
     cx->buf_wp = 0;
-    cx->status = STATUS_NRPNUNDEF;
+    cx->status = STATUS_NRPN_UNDEF_BMP;
     cx->sysex_rp = 0;
     cx->sysex_wp = 0;
 
@@ -251,7 +253,7 @@ void midiPortFlush(MidiOutPortT* p)
     cx->buf_rp = cx->buf_wp;
     cx->sysex_rp = cx->sysex_wp;
     cx->sysex_cn = SYSEX_CN_UNLOCK;
-    cx->status = STATUS_NRPNUNDEF;
+    cx->status = STATUS_NRPN_UNDEF_BMP;
     MIDI_ATOMIC_END();
 }
 
@@ -313,37 +315,33 @@ static uint32_t m_cc_prio_bmp[4] = {
     0xFF00003C, // channel modes and rpn addr
 };
 
+#include <stdio.h>
 static inline uint16_t mGetMessagePrio(MidiMessageT m)
 {
     uint16_t priority = 0;
     if (m.cin == MIDI_CIN_CONTROLCHANGE) {
         uint8_t cc_pos = m.byte2 >> 5;
-        uint8_t cc_msk = m.byte2 & 0x31;
+        uint8_t cc_msk = m.byte2 & 0x1F;
         if (cc_pos == 0) {
             priority = m_cc_priorities[0];
         } else {
             uint8_t is_high = (m_cc_prio_bmp[cc_pos] >> cc_msk) & 0x1;
             priority = m_cc_priorities[1 + is_high];
         }
+        printf("getprio: %d || %d || %d\r\n", priority, cc_msk, cc_pos);
     } else {
         priority = m_cin_priorities[m.cin];
     }
     return priority;
 }
 
-// TODO: delete debug stuff!!!
-
-#include <stdio.h>
 // flush certain position from port buffer
 static inline void mFlushMessage(MidiOutPortContextT* cx, uint16_t pos)
 {
-    // printf("mFlushMessage pos: %d\r\n", pos);
-    // printf("(pos - cx->buf_rp) & MIDI_TX_BUFFER_SIZE: %d\r\n", (pos - cx->buf_rp) & MIDI_TX_BUFFER_SIZE);
-    // printf("(cx->buf_wp - cx->buf_rp) & MIDI_TX_BUFFER_SIZE: %d\r\n", (cx->buf_wp - cx->buf_rp) & MIDI_TX_BUFFER_SIZE);
     MIDI_ASSERT(cx);
     MIDI_ASSERT(pos < MIDI_TX_BUFFER_SIZE);
     // rp <= pos < wp
-    MIDI_ASSERT(((pos - cx->buf_rp) & MIDI_TX_BUFFER_SIZE) <= ((cx->buf_wp - cx->buf_rp) & MIDI_TX_BUFFER_SIZE));
+    MIDI_ASSERT(((pos - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1)) <= ((cx->buf_wp - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1)));
     cx->messages_flushed++;
 
     // scan and shift form pos to rp
@@ -351,6 +349,14 @@ static inline void mFlushMessage(MidiOutPortContextT* cx, uint16_t pos)
         cx->buf[i] = cx->buf[(i - 1) & (MIDI_TX_BUFFER_SIZE - 1)];
     }
     cx->buf_rp = (cx->buf_rp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+
+    // // shift from pos to wp
+    // cx->buf_wp = (cx->buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1);
+    // uint16_t next;
+    // for (uint16_t i = pos; i != cx->buf_wp; i = next) {
+    //     next = (i + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+    //     cx->buf[i] = cx->buf[next];
+    // }
 }
 
 // return MIDI_RET_OK if there is available space in buffer
@@ -426,11 +432,145 @@ static MidiRet mOptWr________na(MidiOutPortContextT* cx, MidiMessageT m)
 
 // CC is the most complex one
 // it uses rpn filtering, repeated messages filtering and priority filtering
+
+static inline MidiRet mowccNrpnData(MidiOutPortContextT* cx, MidiMessageT m)
+{
+    // check that address is correct
+    if (cx->status & STATUS_NRPN_UNDEF_BMP) {
+        cx->messages_flushed++;
+        return MIDI_RET_FAIL;
+    }
+    // scan buffer only up to the last address set, do not replace data of different addresses
+    for (uint16_t i = (cx->buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1);
+         i != ((cx->buf_rp - 1) & (MIDI_TX_BUFFER_SIZE - 1));
+         i = (i - 1) & (MIDI_TX_BUFFER_SIZE - 1)) {
+        // check that current position is not an address, then we can replace
+        uint8_t cc_pos = cx->buf[i].byte2 >> 5;
+        uint8_t cc_msk = cx->buf[i].byte2 & 0x1F;
+        const uint32_t nrpn_addr_bmp3 = 0x0000003C;
+        if ((cc_pos == 3) && ((nrpn_addr_bmp3 >> cc_msk) & 1)) {
+            break;
+        } else {
+            const uint32_t compare_mask = m_compare_mask[MIDI_CIN_CONTROLCHANGE];
+            if (((cx->buf[i].full_word ^ m.full_word) & compare_mask) == 0) {
+                cx->messages_optimized++;
+                mFlushMessage(cx, i);
+                cx->buf[cx->buf_wp] = m;
+                cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+                return MIDI_RET_OK;
+            }
+        }
+    }
+    // prio filtering
+    MidiRet ret = MIDI_RET_FAIL;
+    if (MIDI_RET_OK == mCheckBufferSpace(cx, mGetMessagePrio(m))) {
+        cx->buf[cx->buf_wp] = m;
+        cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+        ret = MIDI_RET_OK;
+    } else {
+        cx->messages_flushed++;
+    }
+    return ret;
+}
+
+static inline MidiRet mowccNrpnAddress(MidiOutPortContextT* cx, MidiMessageT m, uint8_t cc_msk)
+{
+    // handle RPN-NRPN switch
+    if (cx->status & STATUS_NOT_RPN) {
+        if (m.byte2 >= 100) {
+            cx->status |= STATUS_NRPN_UNDEF_BMP;
+            cx->status &= ~STATUS_NOT_RPN;
+            cx->nrpn_lsb = 0xFF;
+            cx->nrpn_msb = 0xFF;
+        }
+    } else {
+        if (m.byte2 < 100) {
+            cx->status |= STATUS_NRPN_UNDEF_BMP | STATUS_NOT_RPN;
+            cx->nrpn_lsb = 0xFF;
+            cx->nrpn_msb = 0xFF;
+        }
+    }
+
+    MidiRet ret = MIDI_RET_FAIL;
+    uint16_t prio = m_cc_priorities[2];
+    if (MIDI_RET_OK == mCheckBufferSpace(cx, prio)) {
+        uint32_t t = MIDI_GET_CLOCK();
+        const uint32_t nrpn_al_bmp3 = 0x00000014;
+        const uint32_t nrpn_ah_bmp3 = 0x00000028;
+        if ((nrpn_al_bmp3 >> cc_msk) & 0x1) {
+            if ((m.byte3 == cx->nrpn_lsb) && ((int32_t)(t - cx->nrpn_lsb_time) > 0)) {
+                // same address was transmitted recently
+                return MIDI_RET_OK;
+            } else {
+                // different address or timeout
+                cx->nrpn_lsb_time = t + MIDI_TX_NRPN_LIFETIME_TICKS;
+                cx->nrpn_lsb = m.byte3;
+                cx->status &= ~STATUS_NRPNAL_UNDEF;
+            }
+        } else if ((nrpn_ah_bmp3 >> cc_msk) & 0x1) {
+            if ((m.byte3 == cx->nrpn_msb) && ((int32_t)(t - cx->nrpn_msb_time) > 0)) {
+                // same address was transmitted recently
+                return MIDI_RET_OK;
+            } else {
+                // different address or timeout
+                cx->nrpn_msb_time = t + MIDI_TX_NRPN_LIFETIME_TICKS;
+                cx->nrpn_msb = m.byte3;
+                cx->status &= ~STATUS_NRPNAH_UNDEF;
+            }
+        }
+        cx->buf[cx->buf_wp] = m;
+        cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+        ret = MIDI_RET_OK;
+    } else {
+        // buffer is full
+        const uint32_t nrpn_al_bmp3 = 0x00000014;
+        const uint32_t nrpn_ah_bmp3 = 0x00000028;
+        if ((nrpn_al_bmp3 >> cc_msk) & 0x1) {
+            cx->status |= STATUS_NRPNAL_UNDEF;
+        } else if ((nrpn_ah_bmp3 >> cc_msk) & 0x1) {
+            cx->status |= STATUS_NRPNAH_UNDEF;
+        }
+        cx->messages_flushed++;
+    }
+    return ret;
+}
+
+static inline MidiRet mowccRegularCC(MidiOutPortContextT* cx, MidiMessageT m)
+{
+    for (uint16_t i = (cx->buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1);
+         i != ((cx->buf_rp - 1) & (MIDI_TX_BUFFER_SIZE - 1));
+         i = (i - 1) & (MIDI_TX_BUFFER_SIZE - 1)) {
+
+        // optimize repeated events, in case they are not nrpn addresses
+        const uint32_t compare_mask = m_compare_mask[MIDI_CIN_CONTROLCHANGE];
+        if (((cx->buf[i].full_word ^ m.full_word) & compare_mask) == 0) {
+            cx->messages_optimized++;
+            // mFlushMessage(cx, i); // should we keep order?
+            // cx->buf[cx->buf_wp] = m;
+            // cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+            cx->buf[i] = m; // let's simplify!
+            return MIDI_RET_OK;
+        }
+        // else check next message
+    }
+    // there was no repeated events
+    // prio filtering
+    MidiRet ret = MIDI_RET_FAIL;
+    if (MIDI_RET_OK == mCheckBufferSpace(cx, mGetMessagePrio(m))) {
+        cx->buf[cx->buf_wp] = m;
+        cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+        ret = MIDI_RET_OK;
+    } else {
+        cx->messages_flushed++;
+    }
+    return ret;
+}
+
 static MidiRet mOptWr________CC(MidiOutPortContextT* cx, MidiMessageT m)
 {
     // rpn filtering
     uint8_t cc_pos = m.byte2 >> 5;
-    uint8_t cc_msk = m.byte2 & 0x31;
+    uint8_t cc_msk = m.byte2 & 0x1F;
     // if this is nrpn data then check it's address validity
     // if either AL or AH was flushed, this data is useless
     const uint32_t nrpn_dat_bmp[4] = {
@@ -440,87 +580,20 @@ static MidiRet mOptWr________CC(MidiOutPortContextT* cx, MidiMessageT m)
         0x00000003, // inc dec
     };
     const uint32_t nrpn_addr_bmp3 = 0x0000003C;
-    const uint32_t nrpn_al_bmp3 = 0x00000014;
-    const uint32_t nrpn_ah_bmp3 = 0x00000028;
+
     const uint32_t compare_mask = m_compare_mask[MIDI_CIN_CONTROLCHANGE];
     uint8_t status_addr = 0;
-    // set proper address status flags
-    if (cc_pos == 3) {
-        if ((nrpn_al_bmp3 >> cc_msk) & 0x1) {
-            status_addr = STATUS_NRPALFAIL;
-        } else if ((nrpn_ah_bmp3 >> cc_msk) & 0x1) {
-            status_addr = STATUS_NRPAHFAIL;
-        }
-    }
     if ((nrpn_dat_bmp[cc_pos] >> cc_msk) & 0x1) {
         // if this is NRPN DATA
-        // check that address is correct
-        if (cx->status & STATUS_NRPNUNDEF) {
-            cx->messages_flushed++;
-            return MIDI_RET_FAIL;
-        }
-        // scan buffer only up to the last address set, do not replace data of different addresses
-        for (uint16_t i = (cx->buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1);
-             i != ((cx->buf_rp - 1) & (MIDI_TX_BUFFER_SIZE - 1));
-             i = (i - 1) & (MIDI_TX_BUFFER_SIZE - 1)) {
-            // check that current position is not an address, then we can replace
-            cc_pos = cx->buf[i].byte2 >> 5;
-            cc_msk = cx->buf[i].byte2 & 0x31;
-            if ((cc_pos == 3) && ((nrpn_addr_bmp3 >> cc_msk) & 1)) {
-                break;
-            } else {
-                if (((cx->buf[i].full_word ^ m.full_word) & compare_mask) == 0) {
-                    cx->messages_optimized++;
-                    mFlushMessage(cx, i);
-                    cx->buf[cx->buf_wp] = m;
-                    cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
-                    return MIDI_RET_OK;
-                }
-            }
-        }
+        return mowccNrpnData(cx, m);
+    } else if ((cc_pos == 3) && (nrpn_addr_bmp3 >> cc_msk) & 0x1) {
+        return mowccNrpnAddress(cx, m, cc_msk);
     } else {
-        //  this is NRPN address, channel mode, or just a regular CC
-        //  scan the whole buffer from end to start
-        for (uint16_t i = (cx->buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1);
-             i != ((cx->buf_rp - 1) & (MIDI_TX_BUFFER_SIZE - 1));
-             i = (i - 1) & (MIDI_TX_BUFFER_SIZE - 1)) {
-
-            // optimize repeated events, in case they are not nrpn addresses
-            const uint32_t compare_mask = m_compare_mask[MIDI_CIN_CONTROLCHANGE];
-            if (((cx->buf[i].full_word ^ m.full_word) & compare_mask) == 0) {
-                if (status_addr) {
-                    // in case this is address, delete new message, and set addr fail
-                    cx->status |= status_addr;
-                    cx->messages_flushed++;
-                    return MIDI_RET_FAIL;
-                } else {
-                    // this is not an NRPN address
-                    cx->messages_optimized++;
-                    // mFlushMessage(cx, i); // should we keep order?
-                    // cx->buf[cx->buf_wp] = m;
-                    // cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
-                    cx->buf[i] = m; // let's simplify!
-                    return MIDI_RET_OK;
-                }
-            }
-            // else check next message
-        }
-        // there was no repeated events
+        return mowccRegularCC(cx, m);
     }
-
-    // 3rd stage - prio filtering
-    MidiRet ret = MIDI_RET_FAIL;
-    if (MIDI_RET_OK == mCheckBufferSpace(cx, mGetMessagePrio(m))) {
-        cx->buf[cx->buf_wp] = m;
-        cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
-        cx->status &= ~status_addr;
-        ret = MIDI_RET_OK;
-    } else {
-        cx->status |= status_addr;
-        cx->messages_flushed++;
-    }
-    return ret;
 }
+
+#include <stdio.h>
 
 // next one if Regular - a little bit harder
 // it uses similar messages filtering and priority filtering
@@ -534,6 +607,8 @@ static MidiRet mOptWr___Regular(MidiOutPortContextT* cx, MidiMessageT m)
         // check if the same entity got new value before previous was sent
         if (0 == ((cx->buf[i].full_word ^ m.full_word) & m_compare_mask[m.cin])) {
             // shift buffer part and write message to the end
+
+            printf("optimize pos %d: %08X %08X\r\n", i, cx->buf[i].full_word, m.full_word);
             cx->messages_optimized++;
             mFlushMessage(cx, i);
             cx->buf[cx->buf_wp] = m;
@@ -560,19 +635,23 @@ static MidiRet mOptWr____Single(MidiOutPortContextT* cx, MidiMessageT m)
 {
     MidiRet ret = MIDI_RET_FAIL;
     if (MIDI_RET_OK == mCheckBufferSpace(cx, m_cin_priorities[MIDI_CIN_SINGLEBYTE])) {
-        for (uint16_t i = cx->buf_rp; i != cx->buf_wp; i = (i + 1) & (MIDI_TX_BUFFER_SIZE - 1)) {
+        cx->buf_rp = (cx->buf_rp - 1) & (MIDI_TX_BUFFER_SIZE - 1);
+        uint16_t pos = cx->buf_rp;
+        while (pos != cx->buf_wp) {
+            uint16_t next = (pos + 1) & (MIDI_TX_BUFFER_SIZE - 1);
             const unsigned t_rt = CINBMP_SINGLEBYTE | CINBMP_2BYTESYSTEMCOMMON | CINBMP_3BYTESYSTEMCOMMON;
-            if ((t_rt >> cx->buf[i].cin) & 1) {
-                // same kind of message, shift it, se we can insert after
-                cx->buf[(i - 1) & (MIDI_TX_BUFFER_SIZE - 1)] = cx->buf[i];
+            if ((next != cx->buf_wp) && ((t_rt >> cx->buf[next].cin) & 1)) {
+                // same kind of message, shift it, so we can insert after
+                cx->buf[pos] = cx->buf[next];
             } else {
-                cx->buf[(i - 1) & (MIDI_TX_BUFFER_SIZE - 1)] = m;
+                cx->buf[pos] = m;
                 ret = MIDI_RET_OK;
                 break;
             }
+            pos = next;
         }
-        cx->buf_rp = (cx->buf_rp - 1) & (MIDI_TX_BUFFER_SIZE - 1);
     } else {
+        // this is dead code
         cx->messages_flushed++;
     }
     return ret;

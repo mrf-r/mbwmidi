@@ -183,6 +183,7 @@ static void outPortTests()
     TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
     TEST_ASSERT(mr.full_word == ((ms2.full_word & 0xFFFFFF0F) | 0x90));
 
+    TEST_TODO("nrpn rpn address undefined test");
     TEST_TODO("atomic was not tested!");
 
     // TODO!!!
