@@ -83,6 +83,7 @@ static void mainBufferTests()
     midiFlush();
     TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mts));
     
+    TEST_TODO("usb message correctness check");
     TEST_TODO("atomic was not tested!");
     // TODO noteoff
 }

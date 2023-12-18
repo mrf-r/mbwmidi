@@ -8,7 +8,7 @@ volatile uint32_t test_clock;
 #include "test_main_sysex.h"
 #include "test_out_port.h"
 #include "test_out_port_prio.h"
-// #include "test_out_port_optim.h"
+#include "test_out_port_optim.h"
 
 int main()
 {
@@ -19,6 +19,7 @@ int main()
     mainSysexTests();
     outPortTests();
     outPortTests_prio();
+    outPortTests_optim();
     TEST_RESULTS();
     return tests_result_not_passed;
 }

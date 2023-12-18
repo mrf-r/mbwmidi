@@ -94,16 +94,13 @@ static void outPortTests_prio()
     midiPortInit(&test_port);
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
     // test prio
-    mm.cin = MIDI_CIN_POLYKEYPRESS;
+    mm.cin = mm.miditype = MIDI_CIN_POLYKEYPRESS;
     for (int i = 0; i < 40; i++) {
         mm.byte2 = i;
-        // TEST_ASSERT_int(((i < m_cin_priorities[mm.cin]) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
-        // TEST_ASSERT_int(((i < (MIDI_TX_BUFFER_SIZE-1)) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
         PBUF(test_port_context);
         TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
     }
     for (int i = 0; i < 40; i++) {
-        // if (i < m_cin_priorities[mm.cin]) {
         PBUF(test_port_context);
         if (i < (MIDI_TX_BUFFER_SIZE - 1)) {
             TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
@@ -112,18 +109,16 @@ static void outPortTests_prio()
             TEST_ASSERT_int(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr), i);
         }
     }
-    printf(ENDLINE);
+    // printf(ENDLINE);
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
-    mm.cin = MIDI_CIN_POLYKEYPRESS;
+    mm.cin = mm.miditype = MIDI_CIN_POLYKEYPRESS;
     for (int i = 0; i < 40; i++) {
         mm.byte2 = i;
-        // TEST_ASSERT_int(((i < m_cin_priorities[mm.cin]) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
-        // TEST_ASSERT_int(((i < (MIDI_TX_BUFFER_SIZE - 1)) ? MIDI_RET_OK : MIDI_RET_FAIL) == midiPortWrite(&test_port, mm), i);
         PBUF(test_port_context);
         TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
     }
     // now there should be 10..40
-    printf(ENDLINE);
+    // printf(ENDLINE);
 
     MidiMessageT stream[] = {
         { .cin = MIDI_CIN_POLYKEYPRESS, .miditype = MIDI_CIN_POLYKEYPRESS, .byte2 = 0x7f, .byte3 = 0x33 },
@@ -177,10 +172,9 @@ static void outPortTests_prio()
     PBUF(test_port_context);
     TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
     TEST_ASSERT(1 == mr.byte2);
-    printf(ENDLINE);
+    // printf(ENDLINE);
 
     // now we have spece for only one message
-
     for (int i = 0; i < len; i++) {
         PBUF(test_port_context);
         TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, stream[i]), i);
@@ -189,12 +183,7 @@ static void outPortTests_prio()
             if (stream[i - 1].cin != stream[i].cin)
                 TEST_ASSERT_int(MIDI_RET_FAIL == midiPortWrite(&test_port, stream[i - 1]), i);
         }
-        // if (i + 1 < len) {
-        //     PBUF(test_port_context);
-        //     TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, stream[i + 1]), i);
-        // }
         TEST_ASSERT_int(0 == test_port_context.messages_optimized, i);
-        // printf("debug: %d %d %d" ENDLINE, test_port_context.messages_optimized, 0, 0);
     }
 
     for (int i = 0; i < MIDI_TX_BUFFER_SIZE - 2; i++) {
@@ -206,7 +195,7 @@ static void outPortTests_prio()
     TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
     TEST_ASSERT(stream[len - 1].full_word == (mr.full_word & 0xFFFFFF0F));
     TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
-    printf(ENDLINE);
+    // printf(ENDLINE);
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
     MidiMessageT mm_cc_damper = { .cin = MIDI_CIN_CONTROLCHANGE, .miditype = MIDI_CIN_CONTROLCHANGE, .byte2 = 64, .byte3 = 64 };
@@ -280,94 +269,4 @@ static void outPortTests_prio()
     TEST_ASSERT(mm_cc_rpn_msb.full_word == test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
     PBUF(test_port_context);
 
-    // printf("debug: %08X" ENDLINE, test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
-    // printf("debug: %08X" ENDLINE, test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
-    // printf("debug: %08X" ENDLINE, test_port_context.buf[(test_port_context.buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1)].full_word);
-    // prio 2BYTESYSTEMCOMMON: 30
-    // prio 3BYTESYSTEMCOMMON: 30
-    // prio SINGLEBYTE       : 30
-    // prio NOTEOFF          : 26
-    // prio PROGRAMCHANGE    : 20
-    // prio NOTEON           : 18
-    // prio PITCHBEND        : 17
-    // prio CHANNELPRESSURE  : 16
-    // prio POLYKEYPRESS     : 15
-    // prio CONTROLCHANGE    : 26
-    // prio CC MSB           : 18
-    // prio CC regular       : 17
-    // prio CC special       : 20
-
-
-    // printf("debug: %08X" ENDLINE, mr.full_word);
-    // printf("debug: %08X" ENDLINE, stream[len - 1].full_word);
-
-    // printf("debug: %d %d %d" ENDLINE, test_port_context.messages_optimized, 0, 0);
-    // midiPortFlush(&test_port);
-    // overflow 2 - again, it is harder, because of filtering!!
-    // mm.cin = MIDI_CIN_SINGLEBYTE;
-    // mm.cin = MIDI_CIN_3BYTESYSTEMCOMMON;
-    // // printf("debug: %d %d %d" ENDLINE, test_port_context.max_utilisation, test_port_context.buf_rp, test_port_context.buf_wp);
-    // printf("debug: %d %d %d" ENDLINE, test_port_context.max_utilisation, test_port_context.buf_rp, test_port_context.buf_wp);
-
-    // TEST_ASSERT(3 == midiPortUtilisation(&test_port));
-    // TEST_ASSERT(3 == midiPortSysexUtilisation(&test_port));
-
-    // TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
-    // TEST_ASSERT(mr.byte2 == 0x77);
-
-    printf(ENDLINE);
-    PBUF(test_port_context);
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    // printf("debug: %d %d" ENDLINE, midiPortUtilisation(&test_port), midiPortSysexUtilisation(&test_port));
-    // TEST_ASSERT(4 == midiPortMaxUtilisation(&test_port));
-    // printf("debug: %d %d" ENDLINE, test_port_context.sysex_rp, test_port_context.sysex_wp);
-    // printf("midiPortMaxSysexUtilisation: %d" ENDLINE, midiPortMaxSysexUtilisation(&test_port));
-    // // TEST_ASSERT(0 == midiPortMaxSysexUtilisation(&test_port));
-
-    // printf("debug: %d %d %d" ENDLINE, mr.cn, 0, 0);
-    // printf("debug: %d %d %d" ENDLINE, test_port_context.buf_rp, test_port_context.buf_wp, MIDI_TX_BUFFER_SIZE);
-    // printf("debug: %d %d %d" ENDLINE, test_port_context.buf_rp, test_port_context.buf_wp, MIDI_TX_BUFFER_SIZE);
-    // printf("debug: %d %d %d" ENDLINE, test_port_context.buf_rp, test_port_context.buf_wp, MIDI_TX_BUFFER_SIZE);
-    // printf("debug: %d %d %d" ENDLINE, test_port_context.buf_rp, test_port_context.buf_wp, MIDI_TX_BUFFER_SIZE);
-
-    // TEST_TODO("midiPortWrite");
-    // TEST_TODO("    - write channel message");
-    // TEST_TODO("        - note on with zero?");
-    // TEST_TODO("        - repeated events");
-    // TEST_TODO("            - noteoff");
-    // TEST_TODO("            - noteon");
-    // TEST_TODO("            - poly kp");
-    // TEST_TODO("            - cc");
-    // TEST_TODO("                - nrpn");
-    // TEST_TODO("                - channel mode");
-    // TEST_TODO("                - multiple cc");
-    // TEST_TODO("                - high resolution cc 0x01/0x21");
-    // TEST_TODO("            - pc");
-    // TEST_TODO("            - channel pressure");
-    // TEST_TODO("            - pitchbend");
-
-    // TEST_TODO("        - priority");
-    // TEST_TODO("            - noteoff");
-    // TEST_TODO("            - noteon");
-    // TEST_TODO("            - poly kp");
-    // TEST_TODO("            - cc");
-    // TEST_TODO("                - nrpn");
-    // TEST_TODO("                - channel mode");
-    // TEST_TODO("                - damper");
-    // TEST_TODO("                - high resolution cc 0x01/0x21");
-    // TEST_TODO("            - pc");
-    // TEST_TODO("            - channel pressure");
-    // TEST_TODO("            - pitchbend");
-    // TEST_TODO("    - sysex");
-    // TEST_TODO("        - is not interruptable by others");
-    // TEST_TODO("        - is not interruptable by others");
-    // TEST_TODO("    - realtime");
-    // TEST_TODO("        - is always on top");
-    // TEST_TODO("        - is always on top");
-
-    // TEST_TODO("        - messages flushed");
-    // TEST_TODO("        - messages optimized");
-    // sysex lock
 }

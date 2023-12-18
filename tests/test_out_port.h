@@ -35,13 +35,13 @@ static void outPortTests()
         .cn = MIDI_CN_TEST0,
         .cin = MIDI_CIN_SYSEXEND2,
         .byte1 = 0x77, // anyway it does not check that
-        .byte2 = 0x88, // only uart/com will notice wrong bytes
+        .byte2 = 0xF7, // only uart/com will notice wrong bytes
         .byte3 = 0x99
     };
     MidiMessageT ms2 = {
         .cn = MIDI_CN_TEST2,
         .cin = MIDI_CIN_SYSEX3BYTES,
-        .byte1 = 0x77, // anyway it does not check that
+        .byte1 = 0xF0, // anyway it does not check that
         .byte2 = 0x88, // only uart/com will notice wrong bytes
         .byte3 = 0x99
     };
@@ -125,7 +125,7 @@ static void outPortTests()
     TEST_ASSERT(2 == midiPortMaxSysexUtilisation(&test_port));
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
     // overflow
-    mm.cin = MIDI_CIN_NOTEOFF;
+    mm.cin = mm.miditype = MIDI_CIN_NOTEOFF;
     // printf("debug: %d %d %d" ENDLINE, test_port_context.max_utilisation, test_port_context.buf_rp, test_port_context.buf_wp);
     for (int i = 0; i < 40; i++) {
         mm.byte2 = i;
@@ -155,7 +155,7 @@ static void outPortTests()
     TEST_ASSERT(mr.full_word == ((ms2.full_word & 0xFFFFFF0F) | 0x90));
     TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
-    mm2.cin = MIDI_CIN_NOTEOFF;
+    mm2.cin = mm2.miditype = MIDI_CIN_NOTEOFF;
     mm2.byte2 = 1;
     TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm2));
     mm2.byte2 = 2;
@@ -168,6 +168,7 @@ static void outPortTests()
     TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
 
     ms2.cin = MIDI_CIN_SYSEXEND3;
+    ms2.byte3 = 0xF7;
     ms2.byte2 = 0x77;
     TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, ms2));
     TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
