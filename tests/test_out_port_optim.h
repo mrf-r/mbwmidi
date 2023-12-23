@@ -1,6 +1,27 @@
 #include "../midi_output.h"
 #include "test.h"
 
+typedef enum { // TODO: unused??
+    CC_DEFAULT = 0,
+    CC____DATH = 0x6,
+    CC____DATL = 0x26,
+    CC__DAMPER = 0x40,
+    CC_____INC = 0x60,
+    CC_____DEC = 0x61,
+    CC__NRPNAH = 0x62,
+    CC__NRPNAL = 0x63,
+    CC___RPNAH = 0x64,
+    CC___RPNAL = 0x65,
+    CC_NTESOFF = 0x78,
+    CC_RESETCC = 0x79,
+    CC_LOCALON = 0x7A,
+    CC_SNDSOFF = 0x7B,
+    CC_OMNIOFF = 0x7C,
+    CC__OMNION = 0x7D,
+    CC__MONOPH = 0x7E,
+    CC__POLYPH = 0x7F,
+} tmcc_nrpn_e;
+
 static void outPortTests_optim()
 {
     MidiOutPortContextT test_port_context;
@@ -18,7 +39,37 @@ static void outPortTests_optim()
     MidiMessageT mm = { .cin = MIDI_CIN_NOTEON, .miditype = MIDI_CIN_NOTEON, .byte2 = 0, .byte3 = 0 };
     MidiMessageT mr;
     /////////////////////////////////////////////////////////////////////////////////////////////
+    // interference
+    for (int i = 9; i < 0xF; i++) {
+        mm.cin = mm.miditype = i;
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
+    }
+    TEST_ASSERT(0xF - 9 == midiPortUtilisation(&test_port));
+    for (int i = 9; i < 0xF; i++) {
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
+        TEST_ASSERT_int(i == mr.miditype, i);
+    }
+    TEST_ASSERT(0 == midiPortUtilisation(&test_port));
+    /////////////////////////////////////////////////////////////////////////////////////////////
+    // correct scan
+    mm.midichannel = 5;
+    mm.byte2 = 0x55;
+    mm.byte3 = 0xAA;
+    for (int i = 9; i < 0xF; i++) {
+        mm.cin = mm.miditype = i;
+        for (int w = 0; w < MIDI_TX_BUFFER_SIZE; w++) {
+            test_port_context.buf[w].full_word = mm.full_word;
+        }
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
+        TEST_ASSERT(1 == midiPortUtilisation(&test_port));
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
+        TEST_ASSERT_int(i == mr.miditype, i);
+        TEST_ASSERT(0 == midiPortUtilisation(&test_port));
+    }
+    /////////////////////////////////////////////////////////////////////////////////////////////
     // notoff, noteon
+    mm.cin = mm.miditype = MIDI_CIN_NOTEON;
+    mm.midichannel = mm.byte2 = mm.byte3 = 0;
     TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
     for (int i = 0; i < 8; i++) {
         mm.byte3 = 1 << i;
@@ -208,13 +259,241 @@ static void outPortTests_optim()
     }
     /////////////////////////////////////////////////////////////////////////////////////////////
     // cc, channel mode, nrpn
+    mm.cin = mm.miditype = MIDI_CIN_CONTROLCHANGE;
+    mm.midichannel = 0;
+    mm.byte2 = mm.byte3 = 0;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    for (int i = 0; i < 8; i++) {
+        mm.byte3 = 1 << i;
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
+    }
+    TEST_ASSERT(1 == midiPortUtilisation(&test_port));
+    for (int i = 0; i < 8; i++) {
+        mm.byte2 = 1 << i;
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
+    }
+    TEST_ASSERT(1 + 8 == midiPortUtilisation(&test_port));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(0 == mr.byte2);
+    for (int i = 0; i < 8; i++) {
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
+        TEST_ASSERT_int((1 << i) == mr.byte2, i);
+    }
+    for (int i = 0; i < 4; i++) {
+        mm.midichannel = 1 << i;
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWrite(&test_port, mm), i);
+    }
+    TEST_ASSERT(4 == midiPortUtilisation(&test_port));
+    for (int i = 0; i < 4; i++) {
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortReadNext(&test_port, &mr), i);
+        TEST_ASSERT_int((1 << i) == mr.midichannel, i);
+        // printf("debug: %d" ENDLINE, mr.byte2);
+    }
 
-    TEST_TODO("m_compare_mask");
-    TEST_TODO("cc sequence reordering - overwrite or delete+add");
-    TEST_TODO("other messages reordering - overwrite or delete+add");
+    //
+    mm.cin = mm.miditype = MIDI_CIN_CONTROLCHANGE;
+    mm.byte2 = 0x55;
+    mm.byte3 = 0xAA;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x66;
+    mm.byte3 = 0xAA;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x77;
+    mm.byte3 = 0xAA;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x55;
+    mm.byte3 = 0x00;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((0x55 == mr.byte2) && (0 == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((0x66 == mr.byte2) && (0xAA == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((0x77 == mr.byte2) && (0xAA == mr.byte3));
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+    // TEST_TODO("cc reordering - overwrite instead of delete+add");
+
+    mm.cin = mm.miditype = MIDI_CIN_NOTEOFF;
+    mm.byte2 = 0x55;
+    mm.byte3 = 0xAA;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x66;
+    mm.byte3 = 0xAA;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x77;
+    mm.byte3 = 0xAA;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 0x55;
+    mm.byte3 = 0x00;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((0x55 == mr.byte2) && (0 == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((0x66 == mr.byte2) && (0xAA == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((0x77 == mr.byte2) && (0xAA == mr.byte3));
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+    // TEST_TODO("other messages reordering - overwrite instead of delete+add");
+
+    // rpn - nrpn write
+    mm.cin = mm.miditype = MIDI_CIN_CONTROLCHANGE;
+    mm.byte2 = CC____DATH;
+    mm.byte3 = 0;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC____DATL;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC_____INC;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC___RPNAH;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm)); // rpnah
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC__NRPNAL;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm)); // nrpnal
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC___RPNAL;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm)); // rpnal
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC___RPNAH;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm)); // rpnah
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC___RPNAH == mr.byte2);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC__NRPNAL == mr.byte2);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC___RPNAL == mr.byte2);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC___RPNAH == mr.byte2);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC_____DEC == mr.byte2);
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+
+    // repeat now
+    mm.byte2 = CC___RPNAL;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC___RPNAH;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC_____DEC == mr.byte2);
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+    // 1 sec
+    test_clock += TEST_SAMPLE_RATE;
+    mm.byte2 = CC___RPNAL;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC___RPNAH;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC_____DEC == mr.byte2);
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+    // 2 sec, combine with cc
+    test_clock += TEST_SAMPLE_RATE;
+    mm.byte2 = 1; // modwheel
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC___RPNAL;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC___RPNAH;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC_____DEC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 1; // modwheel
+    mm.byte3 = 55;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((1 == mr.byte2) && (55 == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC___RPNAL == mr.byte2);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC_____DEC == mr.byte2);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC___RPNAH == mr.byte2);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(CC_____DEC == mr.byte2);
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+
+    // TEST_TODO("message in the middle, that replacing/flushing is correct");
+    mm.byte2 = 1;
+    mm.byte3 = 55;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 2;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 3;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 4;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 5;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = 3;
+    mm.byte3 = 33;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((1 == mr.byte2) && (55 == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((2 == mr.byte2) && (55 == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((3 == mr.byte2) && (33 == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((4 == mr.byte2) && (55 == mr.byte3));
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT((5 == mr.byte2) && (55 == mr.byte3));
+
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortReadNext(&test_port, &mr));
+
+    // status reset
+    mm.byte2 = CC_____INC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.byte2 = CC___RPNAH;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    mm.cin = mm.miditype = MIDI_CIN_SINGLEBYTE;
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE - 1; i++) {
+        TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    }
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE - 1; i++) {
+        TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+        TEST_ASSERT(MIDI_CIN_SINGLEBYTE == mr.cin);
+    }
+    mm.cin = mm.miditype = MIDI_CIN_CONTROLCHANGE;
+    mm.byte2 = CC_____INC;
+    TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm)); // flush does not detect this
+
+    mm.cin = mm.miditype = MIDI_CIN_SINGLEBYTE;
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE - 1; i++) {
+        TEST_ASSERT(MIDI_RET_OK == midiPortWrite(&test_port, mm));
+    }
+    mm.cin = mm.miditype = MIDI_CIN_CONTROLCHANGE;
+    // printf("debug: %08X" ENDLINE, midiPortUtilisation(&test_port));
+    test_clock += TEST_SAMPLE_RATE * 5;
+    mm.byte2 = CC___RPNAL;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+    for (int i = 0; i < MIDI_TX_BUFFER_SIZE - 1; i++) {
+        TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+        TEST_ASSERT(MIDI_CIN_SINGLEBYTE == mr.cin);
+    }
+
+    mm.cin = mm.miditype = MIDI_CIN_CONTROLCHANGE;
+    mm.byte2 = CC_____INC;
+    TEST_ASSERT(MIDI_RET_FAIL == midiPortWrite(&test_port, mm));
+
     TEST_TODO("status should not be modified by flushed message");
-    TEST_TODO("nrpn addr timer");
 
+    // printf("debug: %08X" ENDLINE, mr.full_word);
+    // printf("debug: %08X" ENDLINE, mr.full_word);
+    // printf("debug: %08X" ENDLINE, mr.full_word);
     TEST_ASSERT(MIDI_TX_BUFFER_SIZE == 32);
     TEST_ASSERT(MIDI_TX_SYSEX_BUFFER_SIZE == 16);
 

@@ -90,16 +90,19 @@ static void outPortTests()
 
     TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
     TEST_ASSERT(0x9 == mr.cn);
-    TEST_ASSERT(mm2.cin == mr.cin);
-    TEST_ASSERT(mm2.byte1 == mr.byte1);
-    TEST_ASSERT(mm2.byte2 == mr.byte2);
-    TEST_ASSERT(mm2.byte3 == mr.byte3);
-    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
-    TEST_ASSERT(0x9 == mr.cn);
+    // printf("debug: %08X" ENDLINE, mr.full_word);
+    // printf("debug: %08X" ENDLINE, mm2.full_word);
+    // reordering: optimisation set to replace instead of delete+add
     TEST_ASSERT(mm.cin == mr.cin);
     TEST_ASSERT(mm.byte1 == mr.byte1);
     TEST_ASSERT(mm.byte2 == mr.byte2);
     TEST_ASSERT(mm.byte3 == mr.byte3);
+    TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
+    TEST_ASSERT(0x9 == mr.cn);
+    TEST_ASSERT(mm2.cin == mr.cin);
+    TEST_ASSERT(mm2.byte1 == mr.byte1);
+    TEST_ASSERT(mm2.byte2 == mr.byte2);
+    TEST_ASSERT(mm2.byte3 == mr.byte3);
     TEST_ASSERT(MIDI_RET_OK == midiPortReadNext(&test_port, &mr));
     TEST_ASSERT(0x9 == mr.cn);
     TEST_ASSERT(ms.cin == mr.cin);

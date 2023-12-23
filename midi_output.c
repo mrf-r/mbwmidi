@@ -434,7 +434,7 @@ static inline MidiRet mowccNrpnAddress(MidiOutPortContextT* cx, MidiMessageT m, 
         const uint32_t nrpn_al_bmp3 = 0x00000014;
         const uint32_t nrpn_ah_bmp3 = 0x00000028;
         if ((nrpn_al_bmp3 >> cc_msk) & 0x1) {
-            if ((m.byte3 == cx->nrpn_lsb) && ((int32_t)(t - cx->nrpn_lsb_time) > 0)) {
+            if ((m.byte3 == cx->nrpn_lsb) && ((int32_t)(cx->nrpn_lsb_time - t) > 0)) {
                 // same address was transmitted recently
                 return MIDI_RET_OK;
             } else {
@@ -444,7 +444,7 @@ static inline MidiRet mowccNrpnAddress(MidiOutPortContextT* cx, MidiMessageT m, 
                 cx->status &= ~STATUS_NRPNAL_UNDEF;
             }
         } else if ((nrpn_ah_bmp3 >> cc_msk) & 0x1) {
-            if ((m.byte3 == cx->nrpn_msb) && ((int32_t)(t - cx->nrpn_msb_time) > 0)) {
+            if ((m.byte3 == cx->nrpn_msb) && ((int32_t)(cx->nrpn_msb_time - t) > 0)) {
                 // same address was transmitted recently
                 return MIDI_RET_OK;
             } else {
@@ -532,9 +532,10 @@ static MidiRet mOptWr___Regular(MidiOutPortContextT* cx, MidiMessageT m)
         if (0 == ((cx->buf[i].full_word ^ m.full_word) & m_compare_mask[m.cin])) {
             // shift buffer part and write message to the end
             cx->messages_optimized++;
-            mFlushMessage(cx, i);
-            cx->buf[cx->buf_wp] = m;
-            cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+            // mFlushMessage(cx, i);
+            // cx->buf[cx->buf_wp] = m;
+            // cx->buf_wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
+            cx->buf[i] = m;
             return MIDI_RET_OK;
         }
     }
