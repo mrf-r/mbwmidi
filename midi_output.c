@@ -24,7 +24,7 @@ typedef enum { // TODO: unused??
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#define MIDI_TX_NRPN_LIFETIME_TICKS ((uint32_t)(MIDI_GET_CLOCK_RATE * 2)) // 2 seconds probably ok
+#define MIDI_TX_NRPN_LIFETIME_TICKS ((uint32_t)(MIDI_CLOCK_RATE * 2)) // 2 seconds probably ok
 
 static const uint32_t m_compare_mask[16] = {
     // RIGHT TO LEFT: cin-cn, status_byte, data_bytes

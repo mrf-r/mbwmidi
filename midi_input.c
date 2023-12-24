@@ -144,6 +144,7 @@ MidiRet midiTsWrite(MidiMessageT m, uint32_t timestamp)
         } else {
             ret = MIDI_RET_FAIL;
         }
+        (void)timestamp;
     } else {
         // convert zero velocity noteon to noteoff
         if ((m.full_word & 0xFF00F00F) == 0x00009009) {

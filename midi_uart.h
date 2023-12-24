@@ -11,28 +11,27 @@ extern "C" {
 // TODO: this should be pointed thru MidiOutUartApiT
 typedef struct {
     union {
-        uint32_t message_full;
-        uint8_t message_bytes[4];
-    };
-    uint16_t rs_alive_timer; // running status alive timer
-    uint16_t activesense_timer;
-    uint8_t laststatus;
-    uint8_t tx_pos;
+        uint32_t full;
+        uint8_t byte[4];
+    }message;
+    uint8_t message_pos;
+    uint8_t message_len;
+    uint32_t rs_alive_timer; // running status alive timer
+    uint32_t activesense_timer;
 } MidiOutUartContextT;
 
 typedef const struct {
     MidiOutUartContextT* context;
-    void (*start_send)(void);
-    void (*stop_send)(void);
-    uint8_t (*is_busy)(void);
-    void (*sendbyte)(uint8_t b);
+    void (*sendbyte)(uint8_t b); // send byte and enable irq
+    void (*stop_send)(void); // disable irq
+    MidiRet (*is_busy)(void); // read irq status
 } MidiOutUartApiT;
 
 // and this is completely different story
 typedef struct _MidiInUartContextT {
     void (*data_handler)(uint8_t d, struct _MidiInUartContextT* input);
-    uint16_t activesense_timer;
-    uint16_t runningstatus_timer;
+    uint32_t activesense_timer;
+    uint32_t runningstatus_timer;
     MidiTsMessageT message;
 } MidiInUartContextT;
 
