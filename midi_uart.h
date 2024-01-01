@@ -27,13 +27,18 @@ typedef const struct {
     MidiRet (*is_busy)(void); // read irq status
 } MidiOutUartApiT;
 
-// and this is completely different story
 typedef struct _MidiInUartContextT {
     void (*data_handler)(uint8_t d, struct _MidiInUartContextT* input);
     uint32_t activesense_timer;
     uint32_t runningstatus_timer;
     MidiTsMessageT message;
 } MidiInUartContextT;
+
+typedef const struct {
+    void* context;
+    const char* name;
+    uint8_t cn; // unique cn
+} MidiInPortT;
 
 void midiInUartInit(MidiInPortT* p);
 void midiInUartByteReceiveCallback(uint8_t byte, MidiInPortT* p);

@@ -12,16 +12,7 @@ typedef struct {
     uint32_t timestamp;
 } MidiTsMessageT;
 
-typedef const struct {
-    void* context;
-    const void* api;
-    const char* name;
-    uint8_t type;
-    uint8_t cn; // unique cn
-} MidiInPortT;
-
 void midiInit(void);
-
 // main buffer write
 MidiRet midiWrite(MidiMessageT m);
 MidiRet midiTsWrite(MidiMessageT m, uint32_t timestamp);

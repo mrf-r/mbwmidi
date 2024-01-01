@@ -10,7 +10,7 @@
 #define MIDI_ATOMIC_START()
 #define MIDI_ATOMIC_END()
 
-#define TEST_SAMPLE_RATE 1
+#define TEST_SAMPLE_RATE 10
 
 extern volatile uint32_t test_clock;
 

@@ -13,14 +13,19 @@
 // control panel extension
 
 /*
+ *    ! EVERYTHING IS LEFT ALIGNED !
  * from panel
- * CTRL_CIN_ENCODER                key - encoder number, value - 0x40 to 0x3F (-64 to 63)
- * CTRL_CIN_POT                    cc - number, value - 0x00 to 0x7F
- * CTRL_CIN_BUTTON_PUSH            key - button, value - not used , 0x00 means nothing
+ * CTRL_CIN_POT                    CC MSB [0..1F] val [0..7F] LSB [20..3F] val [0..7F] - up to 32
+ * CTRL_CIN_ENCODER                CC [40..5F] val [40..0x3F] (-64 to 63) - up to 32
+ * CTRL_CIN_BUTTON_PUSH            NoteOn, value - velocity, 0x00 - release (NoteOff as well)
+ * CTRL_CIN_BUTTON_PRESSURE        PolyKp, value - pressure - up to 128
  *
  * to panel
- * CTRL_CIN_LED_ON                 key - led number, value - color/intensity/palette code. value 0 reserved to OFF state
- * CTRL_CIN_LED_OFF                switch off, same as LED_ON with zero value
+ * CTRL_CIN_LED_ON                 NoteOn value - color/intensity/palette code. value 0 or NoteOff = OFF
+ * CTRL_CIN_PALETTE                PolyKp value - code
+ * CTRL_CIN_POT_SWITCH             CC MSB [0..1F] val [0..7F] - switch patch (same functionality) - wait for cross
+ * CTRL_CIN_POT_LOCK               MonoAT - switch mode (different functionality) - wait for active
+ * CTRL_CIN_ENC_LOCK               MonoAT val ignored - wait for active
  *
  * CTRL_CIN_LED_VALUE              value - set color for future pattern update
  * CTRL_CIN_LED_PATTERN            key - least 4 bits, value - most 4 bits

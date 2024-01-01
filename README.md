@@ -11,7 +11,14 @@ All internal data are USB Midi v1 messages, but with redefined cable numbers.
  - filter same messages on output (when previous value was not sended yet, but we already got new one)
  - filter low priority messages (for ex. pressure is not as critical as noteoff) depending on output port utilisation
  - filter rpn data if address was not set or was filtered
- - simple routing and merging. 
+ - simple routing and merging.
+
+### threads:
+ - main loop periodic async polling: message processing, handling running status, active sensing
+ - uart tx irq
+ - uart rx irq
+ - usb irq: rx/tx
+ - i2c irq: rx/tx
 
 ### limitations/requirements:
 - all ports should be inited separately, with proper sequence (TODO: example?)

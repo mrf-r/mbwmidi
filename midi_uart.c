@@ -15,6 +15,7 @@ static void mSh_3ss(uint8_t byte, MidiInUartContextT* cx);
 static void mSh_6tune(uint8_t byte, MidiInUartContextT* cx);
 static void mSh_7sxend(uint8_t byte, MidiInUartContextT* cx);
 static void mSh_noa(uint8_t byte, MidiInUartContextT* cx);
+static void mSh_rtna(uint8_t byte, MidiInUartContextT* cx);
 static void mSh_rt(uint8_t byte, MidiInUartContextT* cx);
 static void mSh_Esense(uint8_t byte, MidiInUartContextT* cx);
 
@@ -45,17 +46,17 @@ static void (*const midi_system_statushandler[16])(uint8_t byte, MidiInUartConte
     mSh_0syx, // start sysex reception        | ID                | ...
     mSh_1mtc, // midi time code               | timecode          | --
     mSh_2spp, // song position pointer        | LSB               | MSB
-    mSh_3ss, // select song                  | song number       | --
-    mSh_noa, //
-    mSh_noa, //
+    mSh_3ss, //  select song                  | song number       | --
+    mSh_noa, //  -
+    mSh_noa, //  -
     mSh_6tune, // tune request                 | --                | --
     mSh_7sxend, // end sysex reception          | --                | --
-    mSh_rt, // main sync
-    mSh_noa, // don't know what it used for
-    mSh_rt, // start
-    mSh_rt, // continue
-    mSh_rt, // stop
-    mSh_noa, //
+    mSh_rt, //   main sync
+    mSh_rtna, // -
+    mSh_rt, //   start
+    mSh_rt, //   continue
+    mSh_rt, //   stop
+    mSh_rtna, // -
     mSh_Esense, // 270mS delay after last message, 330mS - connection error
     mSh_rt // reset
 };
@@ -82,6 +83,7 @@ static inline void mTerminateSysex(MidiInUartContextT* cx)
             }
         }
     }
+    cx->data_handler = mDh_noa; // TODO: side effect
 }
 
 // init uart input handling structures
@@ -205,18 +207,19 @@ static void mSh_7sxend(uint8_t byte, MidiInUartContextT* cx)
 {
     cx->message.timestamp = MIDI_GET_CLOCK();
     mTerminateSysex(cx);
-    cx->data_handler = mDh_noa;
 }
 static void mSh_noa(uint8_t byte, MidiInUartContextT* cx)
 {
     (void)byte;
     (void)cx;
     // TODO: sysex termination timeout??
-    // normally this function will not be called, but in case
-    // of some serial crap, sysex termination may be called twice
-    // it is better than lock port
     mTerminateSysex(cx);
-    cx->data_handler = mDh_noa;
+}
+static void mSh_rtna(uint8_t byte, MidiInUartContextT* cx)
+{
+    // filter out unimplemented
+    (void)byte;
+    (void)cx;
 }
 static void mSh_rt(uint8_t byte, MidiInUartContextT* cx)
 {
@@ -425,7 +428,7 @@ void midiOutUartTap(MidiOutPortT* p)
             // }
         }
     } else {
-        #warning "atomic reentry"
+#warning "atomic reentry"
         midiOutUartTranmissionCompleteCallback(p);
     }
     MIDI_ATOMIC_END();
