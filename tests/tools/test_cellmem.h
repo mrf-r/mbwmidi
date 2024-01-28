@@ -6,9 +6,12 @@ uint32_t cm_bitmap[CM_BMPSIZE(SEQUENCER_EVENTS)];
 
 #define CMVIEW                                                           \
     for (int cmpos = 0; cmpos < CM_BMPSIZE(SEQUENCER_EVENTS); cmpos++) { \
-        printf("%08X ", cm_bitmap[cmpos]);                               \
+        printf("%08X", cm_bitmap[cmpos]);                                \
     }                                                                    \
     printf("\n");
+
+#define TEST_SIZE 200
+unsigned positions[TEST_SIZE];
 
 static void cemtests()
 {
@@ -16,31 +19,32 @@ static void cemtests()
     printf("events: %d, bmpsize: %d\n", SEQUENCER_EVENTS, (int)sizeof(cm_bitmap));
     CMVIEW
     cmInit(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS));
-    CMVIEW
-    printf("cmAlloc: %d\n", cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
-    CMVIEW
-    printf("cmAlloc: %d\n", cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
-    CMVIEW
-    printf("cmAlloc: %d\n", cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
-    CMVIEW
-    printf("cmAlloc: %d\n", cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
-    CMVIEW
-    printf("cmAlloc: %d\n", cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
-    CMVIEW
-    printf("cmFree 1\n");
-    cmFree(cm_bitmap, 1);
-    CMVIEW
-    printf("cmAlloc: %d\n", cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
-    CMVIEW
-    printf("cmFree 2\n");
-    cmFree(cm_bitmap, 2);
-    CMVIEW
-    printf("cmFree 4\n");
-    cmFree(cm_bitmap, 4);
-    CMVIEW
-    printf("cmAlloc: %d\n", cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
-    CMVIEW
-    TEST_TODO("so far visual control only))");
+    // printf("%5d\n", cmCountFreeCells(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
+    TEST_ASSERT(cmCountFreeCells(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)) == (CM_BMPSIZE(SEQUENCER_EVENTS) * 32 - 1));
+    for (int i = 0; i < TEST_SIZE; i++) {
+        positions[i] = cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS));
+        printf("%5d: ", positions[i]);
+        CMVIEW
+        TEST_ASSERT_int(i < (CM_BMPSIZE(SEQUENCER_EVENTS) * 32 - 1) ? positions[i] : !positions[i], i);
+    }
+    // free
+    // printf("%5d\n", cmCountFreeCells(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
+    TEST_ASSERT(cmCountFreeCells(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)) == 0);
+    for (int i = 0; i < 50; i++) {
+        cmFree(cm_bitmap, positions[i]);
+        printf("%5d: ", positions[i]);
+        CMVIEW
+    }
+    // printf("%5d\n", cmCountFreeCells(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)));
+    TEST_ASSERT(cmCountFreeCells(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS)) == 50);
+    // free
+    for (int i = 0; i < 50; i++) {
+        positions[i] = cmAlloc(cm_bitmap, CM_BMPSIZE(SEQUENCER_EVENTS));
+        printf("%5d: ", positions[i]);
+        CMVIEW
+        TEST_ASSERT_int(positions[i], i);
+    }
 
     // TEST_ASSERT()
+    TEST_TODO("improve this test");
 }
