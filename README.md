@@ -28,6 +28,7 @@ All internal data are USB Midi v1 messages, but with redefined cable numbers.
 
 
 ### TODO
+- special relative cc pass-through and optimisation (integrate, not replace)
 - port allowable prio: utilisation or new message?
 - should port write initiate transmission??
 - rpn address source is not analysed. merging rpn is vulnerable

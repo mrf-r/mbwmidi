@@ -1,7 +1,7 @@
 #include "../midi_uart.h"
 #include "test.h"
 
-static void uartSequenceReceive(uint8_t* seq, uint32_t len, uint32_t ts_delta, MidiInPortT* port)
+static void uartSequenceReceive(const uint8_t* seq, const uint32_t len, const uint32_t ts_delta, const MidiInPortT* port)
 {
     for (uint32_t i = 0; i < len; i++) {
         test_clock += ts_delta;
@@ -165,7 +165,7 @@ static void testUartIn()
     // TEST_TODO("realtime interruption");
     // TEST_TODO("sysex interruption?");
     // TEST_TODO("system decode, rs");
-    
+
     TEST_TODO("rs");
 
     TEST_TODO("tap");
