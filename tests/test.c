@@ -10,6 +10,7 @@ volatile uint32_t test_clock;
 #include "test_out_port_prio.h"
 #include "test_out_port_optim.h"
 #include "test_uart_in.h"
+#include "test_uart_out.h"
 
 int main()
 {
@@ -22,6 +23,7 @@ int main()
     outPortTests_prio();
     outPortTests_optim();
     testUartIn();
+    testUartOut();
     TEST_RESULTS();
     return tests_result_not_passed;
 }

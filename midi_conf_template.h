@@ -37,4 +37,6 @@ static inline void _atomicEnd()
 #define MIDI_ATOMIC_START _atomicStart
 #define MIDI_ATOMIC_END _atomicEnd
 
+// #define MIDI_UART_NOTEOFF_VELOCITY_MATTERS // it will break Running Status more often
+
 #endif // _MIDI_CONF_H

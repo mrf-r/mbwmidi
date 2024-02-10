@@ -379,34 +379,47 @@ void midiOutUartTranmissionCompleteCallback(MidiOutUartPortT* p)
     uint32_t t = MIDI_GET_CLOCK();
 
     if (cx->message_pos < cx->message_len) {
-        p->sendbyte(cx->message.byte[cx->message_pos++]);
+        p->sendByte(cx->message.byte[cx->message_pos++]);
         // update AS if it is enabled
         cx->activesense_timer = t;
     } else {
         // start new message
         MidiMessageT m;
         if (MIDI_RET_OK == midiPortReadNext(p->port, &m)) {
-            const uint32_t cinrs = 0x7F00;
-            if (((cinrs >> m.cin) & 0x1) && (m.byte1 == cx->message.byte[1]) && ((int32_t)(cx->rs_alive_timer - t) > 0)) {
-                // running status is OK, send data
-                p->sendbyte(m.byte2);
-                cx->message_pos = 3;
+            if ( /* (MIDI_CIN_SINGLEBYTE == m.cin) && */ (m.byte1 > 0xF7)) {
+                // realtime
+                p->sendByte(m.byte1);
             } else {
-                // send status or first byte
-                p->sendbyte(m.byte1);
-                cx->message_pos = 2;
-                cx->rs_alive_timer = t + MIDI_RUNNINGSTATUS_HOLD;
+#ifndef MIDI_UART_NOTEOFF_VELOCITY_MATTERS
+                // can not be performed in midiPort,
+                // as NOTEOFF and NOTEON priorities are different
+                // it should be optimized here
+                if (MIDI_CIN_NOTEOFF == m.cin) {
+                    m.byte3 = 0;
+                    m.full_word |= 0x00001001;
+                }
+#endif
+                const uint32_t cinrs = 0x7F00;
+                if (((cinrs >> m.cin) & 0x1) && (m.byte1 == cx->message.byte[1]) && ((int32_t)(cx->rs_alive_timer - t) > 0)) {
+                    // running status is OK, send data
+                    p->sendByte(m.byte2);
+                    cx->message_pos = 3;
+                } else {
+                    // send status or first byte
+                    p->sendByte(m.byte1);
+                    cx->message_pos = 2;
+                    cx->rs_alive_timer = t + MIDI_RUNNINGSTATUS_HOLD;
+                }
+                cx->activesense_timer = t;
+                cx->message.full = m.full_word;
+                cx->message_len = cin_len[m.cin];
+                MIDI_ASSERT(cx->message_pos <= cx->message_len);
             }
-            cx->activesense_timer = t;
-            cx->message.full = m.full_word;
-            cx->message_len = cin_len[m.cin];
-            MIDI_ASSERT(cx->message_pos < cx->message_len);
         } else {
             // port empty
-            p->stop_send();
+            p->stopSend();
         }
     }
-
     MIDI_ATOMIC_END();
 }
 
@@ -417,13 +430,13 @@ void midiOutUartTap(MidiOutUartPortT* p)
     MidiOutUartContextT* ucx = p->context;
     MIDI_ATOMIC_START();
     uint32_t t = MIDI_GET_CLOCK();
-    if (!(p->is_busy())) {
+    if (!(p->isBusy())) {
         // if transmission is inactive
         if ((int32_t)(t - ucx->activesense_timer) > 0) {
             // if AS is active
             if ((int32_t)(t - ucx->activesense_timer) > MIDI_ACTIVESENSE_SEND) {
                 ucx->activesense_timer = t;
-                p->sendbyte(0xFE);
+                p->sendByte(0xFE);
                 // TODO: syx timeout should be handled in port level ????
                 // or uart tap should be part of port tap
                 // if (pcx->status & STATUS_OUTPUT_SYX_MODE) {

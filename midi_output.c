@@ -186,7 +186,7 @@ MidiRet midiPortWrite(MidiOutPortContextT* cx, MidiMessageT m)
     // // start transmission if not already started
     // if (p->type == MIDI_TYPE_UART) {
     //     MidiOutUartApiT* uap = (MidiOutUartApiT*)p->api;
-    //     if (!(uap->is_busy())) {
+    //     if (!(uap->isBusy())) {
     //         midiOutUartTranmissionCompleteCallback(p);
     //     }
     // }
@@ -214,7 +214,7 @@ MidiRet midiPortWriteRaw(MidiOutPortContextT* cx, MidiMessageT m)
     // // start transmission if not already started
     // if (p->type == MIDI_TYPE_UART) {
     //     MidiOutUartApiT* uap = (MidiOutUartApiT*)p->api;
-    //     if (!(uap->is_busy())) {
+    //     if (!(uap->isBusy())) {
     //         midiOutUartTranmissionCompleteCallback(p);
     //     }
     // }
