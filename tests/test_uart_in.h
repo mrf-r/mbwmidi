@@ -1,11 +1,11 @@
 #include "../midi_uart.h"
 #include "test.h"
 
-static void uartSequenceReceive(const uint8_t* seq, const uint32_t len, const uint32_t ts_delta, const MidiInPortT* port)
+static void uartSequenceReceive(const uint8_t* seq, const uint32_t len, const uint32_t ts_delta, MidiInUartContextT* const cx)
 {
     for (uint32_t i = 0; i < len; i++) {
         test_clock += ts_delta;
-        midiInUartByteReceiveCallback(seq[i], port);
+        midiInUartByteReceiveCallback(seq[i], cx, 5);
     }
 }
 
@@ -15,12 +15,7 @@ static void testUartIn()
     MidiMessageT mr;
     MidiTsMessageT mtr;
     MidiInUartContextT test_uart_in_context;
-    MidiInPortT test_in_port = {
-        .name = "UartIn",
-        .context = &test_uart_in_context,
-        .cn = 5
-    };
-    midiInUartInit(&test_in_port);
+    midiInUartInit(&test_uart_in_context);
     midiInit(); // syx unlock
 
     //////////////////////////////////////////////////////////////////
@@ -68,7 +63,7 @@ static void testUartIn()
     TEST_ASSERT(tseq01_mres_len == sizeof(tseq01_mres) / 4);
 
     test_clock = 0x22;
-    uartSequenceReceive(tseq01, tseq01_len, 1, &test_in_port);
+    uartSequenceReceive(tseq01, tseq01_len, 1, &test_uart_in_context);
     for (int i = 0; i < tseq01_mres_len; i++) {
         TEST_ASSERT_int(MIDI_RET_OK == midiRead(&mtr), i);
         TEST_ASSERT_int(0x21 + tseq01_ts[i] == mtr.timestamp, i);
@@ -128,7 +123,7 @@ static void testUartIn()
     TEST_ASSERT(sizeof(tseq02_ts) == sizeof(tseq02_mres) / 4);
 
     test_clock = 0x22;
-    uartSequenceReceive(tseq02, tseq02_len, 1, &test_in_port);
+    uartSequenceReceive(tseq02, tseq02_len, 1, &test_uart_in_context);
     for (int i = 0; i < tseq02_mres_len; i++) {
         TEST_ASSERT_int(MIDI_RET_OK == midiRead(&mtr), i);
         // printf("debug: %d - %08X" ENDLINE, mtr.timestamp - 0x22, mtr.timestamp);
@@ -140,6 +135,147 @@ static void testUartIn()
         TEST_ASSERT_int(MIDI_RET_OK == midiSysexRead(&mr), i);
         TEST_ASSERT_int(tseq02_mres_syx[i] == mr.full_word, i);
     }
+    TEST_ASSERT(MIDI_RET_FAIL == midiSysexRead(&mr));
+
+    //////////////////////////////////////////////////////////////////
+    // #define MIDI_RUNNINGSTATUS_RESET (MIDI_CLOCK_RATE * 5000 / 1000)
+    // #define MIDI_RUNNINGSTATUS_HOLD (MIDI_CLOCK_RATE * 500 / 1000)
+
+    // test runningstatus timer
+    // it is integrated in midiInUartByteReceiveCallback
+    // should ignore data after (MIDI_CLOCK_RATE * 5000 / 1000)
+    // test_clock = 0x22;
+    // midiInUartInit(&test_uart_in_context);
+    midiInUartByteReceiveCallback(0x90, &test_uart_in_context, 5);
+    midiInUartByteReceiveCallback(0x55, &test_uart_in_context, 5);
+    midiInUartByteReceiveCallback(0x56, &test_uart_in_context, 5);
+    test_clock += (MIDI_CLOCK_RATE * 5000 / 1000) - 1;
+    midiInUartByteReceiveCallback(0x57, &test_uart_in_context, 5);
+    midiInUartByteReceiveCallback(0x58, &test_uart_in_context, 5);
+    test_clock += 1;
+    midiInUartByteReceiveCallback(0x59, &test_uart_in_context, 5);
+    midiInUartByteReceiveCallback(0x5A, &test_uart_in_context, 5);
+    TEST_ASSERT(MIDI_RET_OK == midiRead(&mtr));
+    TEST_ASSERT(mtr.mes.full_word == 0x56559059);
+    TEST_ASSERT(MIDI_RET_OK == midiRead(&mtr));
+    TEST_ASSERT(mtr.mes.full_word == 0x58579059);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    // and the same with 2 byte messages
+    midiInUartByteReceiveCallback(0xD0, &test_uart_in_context, 5);
+    midiInUartByteReceiveCallback(0x25, &test_uart_in_context, 5);
+    test_clock += (MIDI_CLOCK_RATE * 5000 / 1000) - 1;
+    midiInUartByteReceiveCallback(0x26, &test_uart_in_context, 5);
+    test_clock += 1;
+    // test_clock = ~test_clock; // TODO: overflow is tolerable, i think
+    // test_clock = test_clock + 1;
+    midiInUartByteReceiveCallback(0x27, &test_uart_in_context, 5);
+    TEST_ASSERT(MIDI_RET_OK == midiRead(&mtr));
+    TEST_ASSERT(mtr.mes.full_word == 0x0025D05D);
+    TEST_ASSERT(MIDI_RET_OK == midiRead(&mtr));
+    TEST_ASSERT(mtr.mes.full_word == 0x0026D05D);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+
+    // #define MIDI_ACTIVESENSE_RESET (MIDI_CLOCK_RATE * 330 / 1000)
+    // #define MIDI_ACTIVESENSE_SEND (MIDI_CLOCK_RATE * 270 / 1000)
+    // tap is useed for active sense reset - should send ANO
+    // inactive on init
+    midiInUartInit(&test_uart_in_context);
+    midiInUartTap(&test_uart_in_context, 8);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    // printf("read: %08X" ENDLINE, mtr.mes.full_word);
+    test_clock += (MIDI_CLOCK_RATE * 330 / 1000);
+    midiInUartTap(&test_uart_in_context, 8);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    test_clock += 1;
+    midiInUartTap(&test_uart_in_context, 8);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    // restore on receive 0xFE, no pass thru for AS
+    midiInUartByteReceiveCallback(0xFE, &test_uart_in_context, 5);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    midiInUartTap(&test_uart_in_context, 8);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    test_clock += (MIDI_CLOCK_RATE * 330 / 1000);
+    midiInUartTap(&test_uart_in_context, 8);
+    for (int i = 0; i < 16; i++) {
+        TEST_ASSERT(MIDI_RET_OK == midiRead(&mtr));
+        TEST_ASSERT(mtr.mes.full_word == (0x007BB08B | (i << 8)));
+    }
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    test_clock += 1;
+    midiInUartTap(&test_uart_in_context, 8);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    // but what if tap is too slow
+    midiInUartByteReceiveCallback(0xFE, &test_uart_in_context, 5);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    midiInUartTap(&test_uart_in_context, 8);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    test_clock += (MIDI_CLOCK_RATE * 330 / 1000);
+    test_clock += (MIDI_CLOCK_RATE * 330 / 1000);
+    test_clock += (MIDI_CLOCK_RATE * 330 / 1000);
+    midiInUartTap(&test_uart_in_context, 8);
+    for (int i = 0; i < 16; i++) {
+        TEST_ASSERT(MIDI_RET_OK == midiRead(&mtr));
+        TEST_ASSERT(mtr.mes.full_word == (0x007BB08B | (i << 8)));
+    }
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+
+    // maintaining AS by other messages
+    midiInUartByteReceiveCallback(0xFE, &test_uart_in_context, 5);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    midiInUartTap(&test_uart_in_context, 8);
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+
+    for (int i = 0; i < 88; i++) {
+        test_clock += (MIDI_CLOCK_RATE * 330 / 1000) - 1;
+        midiInUartTap(&test_uart_in_context, 8);
+        TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+        midiInUartByteReceiveCallback(0xFF, &test_uart_in_context, 5);
+        TEST_ASSERT(MIDI_RET_OK == midiRead(&mtr));
+        TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    }
+    test_clock += (MIDI_CLOCK_RATE * 330 / 1000);
+    midiInUartTap(&test_uart_in_context, 8);
+    for (int i = 0; i < 16; i++) {
+        TEST_ASSERT(MIDI_RET_OK == midiRead(&mtr));
+        TEST_ASSERT(mtr.mes.full_word == (0x007BB08B | (i << 8)));
+    }
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+
+    //////////////////////////////////////////////////////////////////
+    // integration: sysex lock
+    MidiInUartContextT another_input;
+    midiInUartInit(&another_input);
+    #define CN1 3
+    #define CN2 7
+    midiInUartByteReceiveCallback(0xF0, &test_uart_in_context, CN1);
+    midiInUartByteReceiveCallback(0x10, &test_uart_in_context, CN1);
+    midiInUartByteReceiveCallback(0x11, &test_uart_in_context, CN1);
+    midiInUartByteReceiveCallback(0x12, &test_uart_in_context, CN1);
+    
+    midiInUartByteReceiveCallback(0xF0, &another_input, CN2);
+    midiInUartByteReceiveCallback(0x20, &another_input, CN2);
+    midiInUartByteReceiveCallback(0x21, &another_input, CN2);
+    midiInUartByteReceiveCallback(0x22, &another_input, CN2);
+
+    midiInUartByteReceiveCallback(0x13, &test_uart_in_context, CN1);
+    midiInUartByteReceiveCallback(0x14, &test_uart_in_context, CN1);
+    midiInUartByteReceiveCallback(0x15, &test_uart_in_context, CN1);
+    midiInUartByteReceiveCallback(0xF7, &test_uart_in_context, CN1);
+
+    midiInUartByteReceiveCallback(0x23, &another_input, CN2);
+    midiInUartByteReceiveCallback(0x24, &another_input, CN2);
+    midiInUartByteReceiveCallback(0x25, &another_input, CN2);
+    midiInUartByteReceiveCallback(0xF7, &another_input, CN2);
+
+    TEST_ASSERT(MIDI_RET_FAIL == midiRead(&mtr));
+    // F0 10 11 - 12 13 14 - 15 F7
+    TEST_ASSERT(MIDI_RET_OK == midiSysexRead(&mr));
+    TEST_ASSERT(mr.full_word == 0x1110F034);
+    TEST_ASSERT(MIDI_RET_OK == midiSysexRead(&mr));
+    TEST_ASSERT(mr.full_word == 0x14131234);
+    TEST_ASSERT(MIDI_RET_OK == midiSysexRead(&mr));
+    TEST_ASSERT(mr.full_word == 0x00F71536);
+    // printf("read: %08X" ENDLINE, mr.full_word);
     TEST_ASSERT(MIDI_RET_FAIL == midiSysexRead(&mr));
 
     // printf("debug: %08X - %08X" ENDLINE, mtr.timestamp, mtr.mes.full_word);
@@ -165,12 +301,4 @@ static void testUartIn()
     // TEST_TODO("realtime interruption");
     // TEST_TODO("sysex interruption?");
     // TEST_TODO("system decode, rs");
-
-    TEST_TODO("rs");
-
-    TEST_TODO("tap");
-    TEST_TODO("as timer");
-    TEST_TODO("rs timer");
-
-    TEST_TODO("integration tests - 2 inputs - syx lock?");
 }

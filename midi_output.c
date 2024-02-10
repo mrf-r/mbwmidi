@@ -73,9 +73,8 @@ static MidiRet (*const mPortOptWr[16])(MidiOutPortContextT* cx, MidiMessageT m) 
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-uint16_t midiPortMaxUtilisation(MidiOutPortT* p)
+uint16_t midiPortMaxUtilisation(MidiOutPortContextT* cx)
 {
-    MidiOutPortContextT* cx = p->context;
     MIDI_ATOMIC_START();
     uint16_t u = cx->max_utilisation;
     cx->max_utilisation = 0;
@@ -83,9 +82,8 @@ uint16_t midiPortMaxUtilisation(MidiOutPortT* p)
     return u;
 }
 
-uint16_t midiPortMaxSysexUtilisation(MidiOutPortT* p)
+uint16_t midiPortMaxSysexUtilisation(MidiOutPortContextT* cx)
 {
-    MidiOutPortContextT* cx = p->context;
     MIDI_ATOMIC_START();
     uint16_t u = cx->max_syx_utilisation;
     cx->max_syx_utilisation = 0;
@@ -94,10 +92,8 @@ uint16_t midiPortMaxSysexUtilisation(MidiOutPortT* p)
 }
 
 // init output port structure
-void midiPortInit(MidiOutPortT* p)
+void midiPortInit(MidiOutPortContextT* cx)
 {
-    MIDI_ASSERT(p->context);
-    MidiOutPortContextT* cx = (MidiOutPortContextT*)p->context;
     MIDI_ATOMIC_START();
     cx->buf_rp = 0;
     cx->buf_wp = 0;
@@ -114,24 +110,21 @@ void midiPortInit(MidiOutPortT* p)
     MIDI_ATOMIC_END();
 }
 
-uint16_t midiPortUtilisation(MidiOutPortT* p)
+uint16_t midiPortUtilisation(MidiOutPortContextT* cx)
 {
-    MidiOutPortContextT* cx = p->context;
     return (cx->buf_wp - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1);
 }
-uint16_t midiPortSysexUtilisation(MidiOutPortT* p)
+uint16_t midiPortSysexUtilisation(MidiOutPortContextT* cx)
 {
-    MidiOutPortContextT* cx = p->context;
     return (cx->sysex_wp - cx->sysex_rp) & (MIDI_TX_SYSEX_BUFFER_SIZE - 1);
 }
 
 // get available space in output port
 // of channel and sysex buffers lowest value will be returned
-uint16_t midiPortFreespaceGet(MidiOutPortT* p)
+uint16_t midiPortFreespaceGet(MidiOutPortContextT* cx)
 {
     uint16_t ret;
     MIDI_ATOMIC_START();
-    MidiOutPortContextT* cx = p->context;
     uint16_t mainbu = (cx->buf_rp - cx->buf_wp - 1) & (MIDI_TX_BUFFER_SIZE - 1);
     uint16_t syxbu = (cx->sysex_rp - cx->sysex_wp - 1) & (MIDI_TX_SYSEX_BUFFER_SIZE - 1);
     ret = syxbu < mainbu ? syxbu : mainbu;
@@ -180,14 +173,12 @@ unsigned midiMessageCheck(MidiMessageT m)
 }
 
 // write message to output port with protocol logic optimizations
-MidiRet midiPortWrite(MidiOutPortT* p, MidiMessageT m)
+MidiRet midiPortWrite(MidiOutPortContextT* cx, MidiMessageT m)
 {
     MIDI_ASSERT(midiMessageCheck(m));
-    MIDI_ASSERT(p->context);
     uint16_t ret;
-    MidiOutPortContextT* cx = p->context;
     if (cx->status & STATUS_OPTIMIZATION_DISABLED)
-        return midiPortWriteRaw(p, m);
+        return midiPortWriteRaw(cx, m);
 
     MIDI_ATOMIC_START();
     ret = mPortOptWr[m.cin](cx, m);
@@ -206,12 +197,11 @@ MidiRet midiPortWrite(MidiOutPortT* p, MidiMessageT m)
 // "midi cable mode" without messages reorganization and
 // protocol logic optimization. both channel and sysex
 // call port flush to exit from this mode
-MidiRet midiPortWriteRaw(MidiOutPortT* p, MidiMessageT m)
+MidiRet midiPortWriteRaw(MidiOutPortContextT* cx, MidiMessageT m)
 {
     MIDI_ASSERT(midiMessageCheck(m));
     MIDI_ASSERT(m.cin >= 0x8 ? m.cin == m.miditype : 1);
     MidiRet ret = MIDI_RET_FAIL;
-    MidiOutPortContextT* cx = p->context;
     MIDI_ATOMIC_START();
     cx->status |= STATUS_OPTIMIZATION_DISABLED;
     uint16_t wp = (cx->buf_wp + 1) & (MIDI_TX_BUFFER_SIZE - 1);
@@ -234,9 +224,8 @@ MidiRet midiPortWriteRaw(MidiOutPortT* p, MidiMessageT m)
 
 // free port, also reset nonoptimize mode
 // and unlocks sysex
-void midiPortFlush(MidiOutPortT* p)
+void midiPortFlush(MidiOutPortContextT* cx)
 {
-    MidiOutPortContextT* cx = p->context;
     MIDI_ATOMIC_START();
     cx->buf_rp = cx->buf_wp;
     cx->sysex_rp = cx->sysex_wp;
@@ -611,7 +600,7 @@ static MidiRet mOptWr____SyxEnd(MidiOutPortContextT* cx, MidiMessageT m)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MidiRet midi_port_check_rt(MidiOutPortT* p, MidiMessageT* m)
+// MidiRet midi_port_check_rt(MidiOutPortContextT* cx, MidiMessageT* m)
 // {
 //     MidiRet ret = MIDI_RET_FAIL;
 //     MidiOutPortContextT* cx = p->context;
@@ -627,10 +616,9 @@ static MidiRet mOptWr____SyxEnd(MidiOutPortContextT* cx, MidiMessageT m)
 //     return ret;
 // }
 
-MidiRet midiPortReadNext(MidiOutPortT* p, MidiMessageT* m)
+MidiRet midiPortReadNext(MidiOutPortContextT* cx, MidiMessageT* m)
 {
     MidiRet ret = MIDI_RET_FAIL;
-    MidiOutPortContextT* cx = p->context;
     MIDI_ATOMIC_START();
     if (cx->status & STATUS_OUTPUT_SYX_MODE) {
         if (cx->sysex_rp != cx->sysex_wp) {
@@ -663,7 +651,7 @@ MidiRet midiPortReadNext(MidiOutPortT* p, MidiMessageT* m)
             }
         }
     }
-    m->cn = p->cn; // this is ok
+    // m->cn = p->cn;
     MIDI_ATOMIC_END();
     return ret;
 }

@@ -7,14 +7,7 @@ static void outPortTests_optim()
 
     MidiOutPortContextT test_port_context;
 
-    MidiOutPortT test_port = {
-        .context = &test_port_context,
-        .api = 0,
-        .name = "TEST",
-        .type = MIDI_TYPE_USB,
-        .cn = 0x9
-    };
-    midiPortInit(&test_port);
+    midiPortInit(&test_port_context);
 
 
     TEST_TODO("as timer");

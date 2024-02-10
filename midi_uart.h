@@ -8,25 +8,7 @@
 extern "C" {
 #endif
 
-// TODO: this should be pointed thru MidiOutUartApiT
-typedef struct {
-    union {
-        uint32_t full;
-        uint8_t byte[4];
-    }message;
-    uint8_t message_pos;
-    uint8_t message_len;
-    uint32_t rs_alive_timer; // running status alive timer
-    uint32_t activesense_timer;
-} MidiOutUartContextT;
-
-typedef const struct {
-    MidiOutUartContextT* context;
-    void (*sendbyte)(uint8_t b); // send byte and enable irq
-    void (*stop_send)(void); // disable irq
-    MidiRet (*is_busy)(void); // read irq status
-} MidiOutUartApiT;
-
+// input
 typedef struct _MidiInUartContextT {
     void (*data_handler)(uint8_t d, struct _MidiInUartContextT* input);
     uint32_t activesense_timer;
@@ -34,19 +16,33 @@ typedef struct _MidiInUartContextT {
     MidiTsMessageT message;
 } MidiInUartContextT;
 
+void midiInUartInit(MidiInUartContextT* cx);
+void midiInUartByteReceiveCallback(uint8_t byte, MidiInUartContextT* cx, const uint8_t cn);
+void midiInUartTap(MidiInUartContextT* cx, const uint8_t cn);
+
+// output
+typedef struct {
+    union {
+        uint32_t full;
+        uint8_t byte[4];
+    } message;
+    uint8_t message_pos;
+    uint8_t message_len;
+    uint32_t rs_alive_timer; // running status alive timer
+    uint32_t activesense_timer;
+} MidiOutUartContextT;
+
 typedef const struct {
-    void* context;
-    const char* name;
-    uint8_t cn; // unique cn
-} MidiInPortT;
+    MidiOutPortContextT* port;
+    MidiOutUartContextT* context;
+    void (*sendbyte)(uint8_t b); // send byte and enable irq
+    void (*stop_send)(void); // disable irq
+    MidiRet (*is_busy)(void); // read irq status
+} MidiOutUartPortT;
 
-void midiInUartInit(MidiInPortT* p);
-void midiInUartByteReceiveCallback(uint8_t byte, MidiInPortT* p);
-void midiInUartTap(MidiInPortT* p);
-
-void midiOutUartInit(MidiOutPortT* p);
-void midiOutUartTranmissionCompleteCallback(MidiOutPortT* p); // transmit next
-void midiOutUartTap(MidiOutPortT* p);
+void midiOutUartInit(MidiOutUartPortT* p);
+void midiOutUartTranmissionCompleteCallback(MidiOutUartPortT* p); // transmit next
+void midiOutUartTap(MidiOutUartPortT* p);
 
 #ifdef __cplusplus
 }
