@@ -37,7 +37,7 @@ typedef const struct {
     MidiOutUartContextT* context;
     void (*sendByte)(uint8_t b); // send byte and enable irq
     void (*stopSend)(void); // disable irq
-    MidiRet (*isBusy)(void); // read irq status
+    MidiRet (*isBusy)(void); // read irq status FAIL==free
 } MidiOutUartPortT;
 
 void midiOutUartInit(MidiOutUartPortT* p);

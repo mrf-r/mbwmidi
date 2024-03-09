@@ -371,7 +371,8 @@ static const uint8_t cin_len[16] = {
     1 + 1, // 0xF 1 Single Byte                                                                  | systemonly
 };
 
-// uart callback for byte transmit
+// called by uart irq handler to continue or stop transmission
+// also called by uart_out_tap to initiate transmission
 void midiOutUartTranmissionCompleteCallback(MidiOutUartPortT* p)
 {
     MidiOutUartContextT* cx = p->context;
@@ -386,7 +387,7 @@ void midiOutUartTranmissionCompleteCallback(MidiOutUartPortT* p)
         // start new message
         MidiMessageT m;
         if (MIDI_RET_OK == midiPortReadNext(p->port, &m)) {
-            if ( /* (MIDI_CIN_SINGLEBYTE == m.cin) && */ (m.byte1 > 0xF7)) {
+            if (/* (MIDI_CIN_SINGLEBYTE == m.cin) && */ (m.byte1 > 0xF7)) {
                 // realtime
                 p->sendByte(m.byte1);
             } else {
@@ -423,30 +424,28 @@ void midiOutUartTranmissionCompleteCallback(MidiOutUartPortT* p)
     MIDI_ATOMIC_END();
 }
 
-// can be used to force start transmission?
+// can be used to force start transmission
 void midiOutUartTap(MidiOutUartPortT* p)
 {
-    // MidiOutPortContextT* pcx = p->context;
     MidiOutUartContextT* ucx = p->context;
     MIDI_ATOMIC_START();
     uint32_t t = MIDI_GET_CLOCK();
-    if (!(p->isBusy())) {
+    int32_t tasdelta = t - ucx->activesense_timer;
+    // interrupt does not work or something is wrong with the clock
+    // delta can not be high when transmission is active
+    MIDI_ASSERT((MIDI_RET_OK == p->isBusy()) ? (tasdelta > MIDI_ACTIVESENSE_SEND) : 1);
+
+    if (MIDI_RET_FAIL == p->isBusy()) {
+        midiOutUartTranmissionCompleteCallback(p);
+    }
+    // and then again,
+    if (MIDI_RET_FAIL == p->isBusy()) {
         // if transmission is inactive
-        if ((int32_t)(t - ucx->activesense_timer) > 0) {
-            // if AS is active
-            if ((int32_t)(t - ucx->activesense_timer) > MIDI_ACTIVESENSE_SEND) {
-                ucx->activesense_timer = t;
-                p->sendByte(0xFE);
-                // TODO: syx timeout should be handled in port level ????
-                // or uart tap should be part of port tap
-                // if (pcx->status & STATUS_OUTPUT_SYX_MODE) {
-                //     // DEBUG_PRINTF("probably sysex timeout\n");
-                //     // exit sysex mode and start sending main buffer
-                //     pcx->status &= ~STATUS_OUTPUT_SYX_MODE;
-            }
-            midiOutUartTranmissionCompleteCallback(p);
-        } else {
-            ucx->activesense_timer = t + 0x80000000;
+        // if AS is active
+        if (tasdelta > MIDI_ACTIVESENSE_SEND) {
+            ucx->activesense_timer = t;
+            p->sendByte(0xFE);
+            // TODO: syx timeout should be handled in port level ????
         }
     }
     MIDI_ATOMIC_END();

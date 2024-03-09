@@ -15,7 +15,7 @@ static void uartOutStopSend()
 }
 static MidiRet uartOutIsBusy()
 {
-    return 0 == uart_out_busy ? MIDI_RET_OK : MIDI_RET_FAIL;
+    return (0 != uart_out_busy) ? MIDI_RET_OK : MIDI_RET_FAIL;
 }
 
 static void testUartOut()
@@ -72,7 +72,7 @@ static void testUartOut()
     TEST_ASSERT(0 == uart_out_busy);
 
     //////////////////////////////////////////////////////////////////
-    // basics system
+    // system
     test_clock += (MIDI_CLOCK_RATE * 500 / 1000); // MIDI_RUNNINGSTATUS_HOLD
     MidiMessageT stream2[] = {
         { .cin = MIDI_CIN_PITCHBEND, .miditype = MIDI_CIN_PITCHBEND, .byte2 = 0x1E, .byte3 = 0x2E },
@@ -100,7 +100,7 @@ static void testUartOut()
         0xE0, 0x1E, 0x2E, 0xF1, 0x10, 0xE0, 0x1F, 0x2F,
         0xF1, 0x11, 0xF2, 0x12, 0x22, 0xF2, 0x13, 0x23,
         0xE0, 0x1E, 0x2E, 0xFA, 0xFB, /* 0xE0, */ 0x1F, 0x2F,
-        0xF0, 0x16, 0x26, 0x07, 0x17, 0x27, 0xF7, 
+        0xF0, 0x16, 0x26, 0x07, 0x17, 0x27, 0xF7,
         0xE0, 0x1E, 0x2E, 0xF7, 0xE0, 0x1F, 0x2F,
         0x0A, 0xF7, 0x0B, 0xF7,
         0x0C, 0x1C, 0xF7, 0x0D, 0x1D, 0xF7
@@ -118,7 +118,122 @@ static void testUartOut()
     midiOutUartTranmissionCompleteCallback(&test_uart_port);
     TEST_ASSERT(0 == uart_out_busy);
 
-    // printf("debug: %02X" ENDLINE, uart_out_last_byte);
+    //////////////////////////////////////////////////////////////////
+    // rs timer
+    // #define MIDI_RUNNINGSTATUS_HOLD (MIDI_CLOCK_RATE * 500 / 1000)
+
+    test_clock += (MIDI_CLOCK_RATE * 500 / 1000); // MIDI_RUNNINGSTATUS_HOLD
+    MidiMessageT stream3[] = {
+        { .cin = MIDI_CIN_PITCHBEND, .miditype = MIDI_CIN_PITCHBEND, .byte2 = 0x1A, .byte3 = 0x2A },
+        { .cin = MIDI_CIN_PITCHBEND, .miditype = MIDI_CIN_PITCHBEND, .byte2 = 0x1B, .byte3 = 0x2B },
+        { .cin = MIDI_CIN_PITCHBEND, .miditype = MIDI_CIN_PITCHBEND, .byte2 = 0x1C, .byte3 = 0x2C },
+        { .cin = MIDI_CIN_PITCHBEND, .miditype = MIDI_CIN_PITCHBEND, .byte2 = 0x1D, .byte3 = 0x2D },
+        { .cin = MIDI_CIN_PROGRAMCHANGE, .miditype = MIDI_CIN_PROGRAMCHANGE, .byte2 = 0x14, .byte3 = 0x24 },
+        { .cin = MIDI_CIN_PROGRAMCHANGE, .miditype = MIDI_CIN_PROGRAMCHANGE, .byte2 = 0x15, .byte3 = 0x25 },
+        { .cin = MIDI_CIN_PROGRAMCHANGE, .miditype = MIDI_CIN_PROGRAMCHANGE, .byte2 = 0x16, .byte3 = 0x26 },
+        { .cin = MIDI_CIN_PROGRAMCHANGE, .miditype = MIDI_CIN_PROGRAMCHANGE, .byte2 = 0x17, .byte3 = 0x27 },
+    };
+    uint8_t stream3bytes[] = {
+        0xE0, 0x1A, 0x2A, 0x1B, 0x2B, 0xE0, 0x1C, 0x2C, 0x1D, 0x2D,
+        0xC0, 0x14, 0x15, 0xC0, 0x16, 0x17
+    };
+    uint32_t stream3time[] = {
+        0, 0, (MIDI_CLOCK_RATE * 500 / 1000) - 1, 0, 0, 1, 0, 0, 0,
+        0, 0, (MIDI_CLOCK_RATE * 500 / 1000) - 1, 0, 1, 0, 0
+    };
+    for (int i = 0; i < sizeof(stream3) / sizeof(MidiMessageT); i++) {
+        TEST_ASSERT_int(MIDI_RET_OK == midiPortWriteRaw(&test_port_context, stream3[i]), i);
+    }
+    for (int i = 0; i < sizeof(stream3bytes); i++) {
+        test_clock += stream3time[i];
+        midiOutUartTranmissionCompleteCallback(&test_uart_port);
+        TEST_ASSERT_int(stream3bytes[i] == uart_out_last_byte, i);
+        // printf("debug: %02X %02X %d" ENDLINE, i, uart_out_last_byte, stream3time[i]);
+        TEST_ASSERT_int(uart_out_busy, i);
+    }
+    midiOutUartTranmissionCompleteCallback(&test_uart_port);
+    TEST_ASSERT(0 == uart_out_busy);
+
+    //////////////////////////////////////////////////////////////////
+    // as timer, tap
+    // #define MIDI_ACTIVESENSE_RESET (MIDI_CLOCK_RATE * 330 / 1000)
+    // #define MIDI_ACTIVESENSE_SEND (MIDI_CLOCK_RATE * 270 / 1000)
+
+    // tap should update busy and last byte (initiate uart transmission) in case it is not empty
+    // tap should sent AS each 270ms
+    uart_out_last_byte = 0;
+    midiOutUartTap(&test_uart_port);
+    TEST_ASSERT(0 == uart_out_busy);
+    TEST_ASSERT(0 == uart_out_last_byte);
+    test_clock += (MIDI_CLOCK_RATE * 270 / 1000);
+    midiOutUartTap(&test_uart_port);
+    TEST_ASSERT(0 == uart_out_busy);
+    TEST_ASSERT(0 == uart_out_last_byte);
+    test_clock += 1;
+    midiOutUartTap(&test_uart_port);
+    TEST_ASSERT(1 == uart_out_busy); // here it fails, why?
+    TEST_ASSERT(0xFE == uart_out_last_byte);
+    uart_out_last_byte = 0;
+    midiOutUartTranmissionCompleteCallback(&test_uart_port);
+    TEST_ASSERT(0 == uart_out_busy);
+    TEST_ASSERT(0 == uart_out_last_byte);
+    test_clock += (MIDI_CLOCK_RATE * 270 / 1000) * 65000;
+    midiOutUartTap(&test_uart_port);
+    TEST_ASSERT(1 == uart_out_busy);
+    TEST_ASSERT(0xFE == uart_out_last_byte);
+    midiOutUartTranmissionCompleteCallback(&test_uart_port);
+    uart_out_last_byte = 0;
+
+    //
+    MidiMessageT mm5 = { .cin = MIDI_CIN_PITCHBEND, .miditype = MIDI_CIN_PITCHBEND, .byte2 = 0x11, .byte3 = 0x22 };
+    midiPortWriteRaw(&test_port_context, mm5); // nothing changed, we need tap to initiate tx
+    TEST_ASSERT(0 == uart_out_busy);
+    midiOutUartTap(&test_uart_port); // 1st call of tx
+    TEST_ASSERT(1 == uart_out_busy);
+    TEST_ASSERT(0xE0 == uart_out_last_byte);
+    test_clock += (MIDI_CLOCK_RATE * 270 / 1000);
+    midiOutUartTranmissionCompleteCallback(&test_uart_port);
+    TEST_ASSERT(1 == uart_out_busy);
+    TEST_ASSERT(0x11 == uart_out_last_byte);
+    test_clock += (MIDI_CLOCK_RATE * 270 / 1000);
+    midiOutUartTranmissionCompleteCallback(&test_uart_port);
+    TEST_ASSERT(1 == uart_out_busy);
+    TEST_ASSERT(0x22 == uart_out_last_byte);
+    test_clock += (MIDI_CLOCK_RATE * 270 / 1000);
+    uart_out_last_byte = 0;
+    midiOutUartTranmissionCompleteCallback(&test_uart_port); // switch off transmission
+    TEST_ASSERT(0 == uart_out_busy);
+    TEST_ASSERT(0 == uart_out_last_byte);
+    midiOutUartTap(&test_uart_port); // nothing to transmit yet
+    TEST_ASSERT(0 == uart_out_busy);
+    test_clock += (MIDI_CLOCK_RATE * 270 / 1000);
+    midiOutUartTap(&test_uart_port); // switch on to transmit AS
+    TEST_ASSERT(1 == uart_out_busy);
+    TEST_ASSERT(0xFE == uart_out_last_byte);
+    midiOutUartTranmissionCompleteCallback(&test_uart_port); // switch off
+    TEST_ASSERT(0 == uart_out_busy);
+    // printf("HELLO" ENDLINE);
+    // printf("debug: %08X %08X" ENDLINE, test_clock, test_uart_context.activesense_timer);
+
+    //////////////////////////////////////////////////////////////////
+    // tap trigger
+    // this test assumes that UART transfer can only be triggered with Tap()
+    // i.e. no calls of SendByte() from PortWrite methods
+    // this is questionable behavior and is subject to change
+    uart_out_last_byte = 0;
+    test_clock += (MIDI_CLOCK_RATE * 500 / 1000); // MIDI_RUNNINGSTATUS_HOLD
+    MidiMessageT mm4 = { .cin = MIDI_CIN_SINGLEBYTE, .byte1 = 0xFB };
+    midiPortWriteRaw(&test_port_context, mm4);
+    TEST_ASSERT(0 == uart_out_busy);
+    TEST_ASSERT(0 == uart_out_last_byte);
+    midiOutUartTap(&test_uart_port);
+    TEST_ASSERT(1 == uart_out_busy);
+    TEST_ASSERT(0xFB == uart_out_last_byte);
+    uart_out_last_byte = 0;
+    midiOutUartTranmissionCompleteCallback(&test_uart_port);
+    TEST_ASSERT(0 == uart_out_busy);
+    TEST_ASSERT(0 == uart_out_last_byte);
+
     // midiOutUartTranmissionCompleteCallback(&test_uart_port);
     // printf("debug: %02X" ENDLINE, uart_out_last_byte);
     // midiOutUartTranmissionCompleteCallback(&test_uart_port);
@@ -156,6 +271,5 @@ static void testUartOut()
     // MIDI_CIN_CHANNELPRESSURE, //   0xD 2 Channel Pressure
     // MIDI_CIN_PITCHBEND, //         0xE 3 PitchBend Change
     // MIDI_CIN_SINGLEBYTE //         0xF 1 Single Byte
-    TEST_TODO("rs timer");
     TEST_TODO("as timer, tap");
 }
