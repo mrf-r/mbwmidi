@@ -4,7 +4,7 @@
 // #include "stm32f4xx_hal.h"
 // #include "stm32f4xx.h"
 
-midi_cvout_voiceblock_t cvgate_vb1;
+MidiCvOutVoice cvgate_vb1;
 
 uint32_t* const BB_GATE_1_OFF = (uint32_t*)(PERIPH_BB_BASE + (GPIOD_BASE + 0x14) * 32 + 3 * 4);
 uint32_t* const BB_GATE_2_OFF = (uint32_t*)(PERIPH_BB_BASE + (GPIOD_BASE + 0x14) * 32 + 6 * 4);
@@ -75,7 +75,7 @@ void cvgate_start()
 
 void cvgate_send(MidiMessageT m)
 {
-    midi_cv_transmit(&cvgate_vb1, m);
+    midiCvHandleMessage(&cvgate_vb1, m);
 }
 
 static inline uint16_t scale_voltage(uint16_t in, uint16_t scl, int16_t off)
@@ -90,21 +90,21 @@ void cvgate_update()
     midi_cr_cvgprocess(&cvgate_vb1);
     uint16_t v;
 
-    v = cvgate_vb1.out[MIDI_CVGVB_CH_PITCH];
+    v = cvgate_vb1.out[MIDI_CV_CH_PITCH];
     v = scale_voltage(v, 16384, 0);
     DAC->DHR12L1 = v;
 
-    v = cvgate_vb1.out[MIDI_CVGVB_CH_MODWHEEL];
+    v = cvgate_vb1.out[MIDI_CV_CH_MODWHEEL];
     v = scale_voltage(v, 16384, 0);
     DAC->DHR12L2 = v;
     DAC->SWTRIGR = 0x3;
 
-    v = cvgate_vb1.out[MIDI_CVGVB_CH_VELO];
+    v = cvgate_vb1.out[MIDI_CV_CH_VELO];
     v = scale_voltage(v, 16384, 0);
     TIM5->CCR1 = (uint8_t)v; // CH3L
     TIM5->CCR2 = (uint8_t)(v >> 8); // CH3H
 
-    v = cvgate_vb1.out[MIDI_CVGVB_CH_AFTERTOUCH];
+    v = cvgate_vb1.out[MIDI_CV_CH_AFTERTOUCH];
     v = scale_voltage(v, 16384, 0);
     TIM5->CCR3 = (uint8_t)v; // CH4L
     TIM5->CCR4 = (uint8_t)(v >> 8); // CH4H

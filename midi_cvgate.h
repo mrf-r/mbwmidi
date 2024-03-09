@@ -3,35 +3,49 @@
 
 #include "midi.h"
 
+// virtual monophonic cvgate processor with multiple cv outputs
+// it's up to you how you will map these outputs to physical cv
+// gate here is also a cv. so you can use either velocity or
+// something simple like (0!=channel_gate)?pin_gate=1:pin_gate=0;
+// scaling and calibration is also outside of the scope
+
+// parameters can be set over midi
+// so received messages not only converted to signals, but also configure module
+// please, take a look into mCv_cc() internal function
+
+// TODO: make polyphonic?? - probably we need a separate voice manager
+
+// #define MIDI_CV_RETRIG_OPTION 0
 #define NOTE_HOLD_MAX_MEMORY 10
 
 typedef enum {
-    MIDI_CVGVB_CH_PITCH = 0,
-    MIDI_CVGVB_CH_VELO,
-    MIDI_CVGVB_CH_VELO_LAST,
-    MIDI_CVGVB_CH_AFTERTOUCH,
-    MIDI_CVGVB_CH_MODWHEEL,
-    MIDI_CVGVB_CH_BREATH,
-    MIDI_CVGVB_CH_TOTAL
-} midi_cvout_vb_channels_en;
+    MIDI_CV_CH_PITCH = 0,
+    MIDI_CV_CH_VELO,
+    MIDI_CV_CH_VELO_LAST,
+    MIDI_CV_CH_AFTERTOUCH,
+    MIDI_CV_CH_MODWHEEL,
+    MIDI_CV_CH_BREATH,
+    MIDI_CV_CH_TOTAL
+} MidiCvChannelEn;
 
-// voiceblock is a virtual monophonic cvgate processor
-// use it's out values for physical cv outputs
 typedef struct
 {
-    uint8_t channel; //1..16 - channel
-    uint8_t gateretrig; //0..1             CC 126/127?
-    uint16_t glidecoef; //0..65536   smooth always active in all modes, switches to legato in notes // CC 5 ??
-    int8_t pw_range; //semitones -24..24   zero - 0x40
+    uint8_t channel; // 1..16 - channel
 
-    //state
+    uint16_t portamento;
+    int32_t glidew; // 1..65535
     int32_t pitch_goal;
     int32_t pitch_slide;
-    int32_t pwshift;
     int32_t velo_goal;
     int32_t velo_slide;
 
+    int16_t pwrange;
+    int32_t pwshift;
+#ifdef MIDI_CV_RETRIG_OPTION
+    // enable or disable retrig - short gate off on each note (even legato)
+    uint8_t gateretrig;
     uint8_t retrigrequest;
+#endif // MIDI_CV_RETRIG_OPTION
     uint8_t damperstate;
     uint8_t velo_last;
 
@@ -41,24 +55,12 @@ typedef struct
         uint8_t velocity;
     } notememory[NOTE_HOLD_MAX_MEMORY];
 
-    uint16_t out[MIDI_CVGVB_CH_TOTAL];
-} midi_cvout_voiceblock_t;
+    uint16_t out[MIDI_CV_CH_TOTAL];
+} MidiCvOutVoice;
 
-// it's up to end user to fill all these fields
-typedef struct {
-    uint16_t scale;
-    uint16_t offset_tresh;
-    uint8_t vb_mode; // select output
-    midi_cvout_voiceblock_t* vb;
-} midi_cvout_ram_t;
-
-typedef const struct midi_cvapi {
-    void (*set_value)(uint16_t cv);
-    midi_cvout_ram_t* cvr;
-} midi_cvout_t;
-
-void midi_voiceblock_init(midi_cvout_voiceblock_t* vb);
-void midi_cr_cvgprocess(midi_cvout_voiceblock_t* vb);
-void midi_cv_transmit(midi_cvout_voiceblock_t* vb, MidiMessageT m);
+void midiCvInit(MidiCvOutVoice* v);
+void midiCvTap(MidiCvOutVoice* v);
+// void midiCvSetGlide(MidiCvOutVoice* v, const uint16_t pv); // use midi stream for that
+void midiCvHandleMessage(MidiCvOutVoice* v, MidiMessageT m);
 
 #endif // _MIDI_CVGATE_H

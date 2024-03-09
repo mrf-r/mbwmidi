@@ -8,7 +8,7 @@
 #define MIDI_ASSERT assert
 
 #define SAMPLE_RATE 48000
-// #define CONTROL_RATE 1500
+#define CONTROL_RATE 1500 // for CV-GATE converter only
 
 extern volatile uint32_t counter_sr;
 // extern volatile uint32_t counter_cr;

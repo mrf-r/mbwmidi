@@ -2,282 +2,243 @@
 #include "math.h"
 // #include "cmsis_gcc.h"
 
-uint16_t fast_exp2_16bit(uint16_t arg)
+#ifdef MIDI_CV_RETRIG_OPTION
+#ifndef RETRIG_TIME_CR_CYCLES
+#define RETRIG_TIME_CR_CYCLES 2
+#endif
+#endif // MIDI_CV_RETRIG_OPTION
+
+// fast approximation of exp2(x/4096)
+static inline uint16_t exp2_fast(uint16_t x)
 {
-    uint32_t e = arg / 4096;
-    uint32_t s = arg & (4096 - 1);
-    uint32_t comp = s > 2048 ? 4096 - s : s;
-    comp = 2048 - comp;
-    comp = comp * comp / 2048;
-    comp = 2048 - comp;
+    uint32_t e = x / 4096;
+    uint32_t s = x & (4096 - 1);
     e = 1 << e;
     s = s * e / 4096;
-    comp = comp * e / 23808;
-    e = e + s - comp;
+    e = e + s;
     return (uint16_t)e;
 }
 
-uint16_t fast_exp2_32bit(uint32_t arg)
+// left aligned
+// 0 - shortest
+// 65535 - longest
+static inline void midiCvSetGlide(MidiCvOutVoice* v, const uint16_t pv)
 {
-    uint32_t e = arg / 0x08000000;
-    uint32_t s = arg & (0x08000000 - 1);
-    uint32_t comp = s > 0x04000000 ? 0x08000000 - s : s;
-    comp = 0x04000000 - comp;
-    comp = (uint64_t)comp * comp / 0x04000000;
-    comp = 0x04000000 - comp;
-    e = 1 << e;
-    s = (uint64_t)s * e / 0x08000000;
-    comp = ((uint64_t)comp * e) >> 16;
-    comp = comp / 0x2e80;
-    e = e + s - comp;
-    return (uint16_t)e;
+    /*
+    scaling coefficients calculation for frequency or time dial
+    1 - define overall range (range = max_value / min_value (~10000))
+    2 - find k (k = np.log2(range)/128*4096)
+    3 - find b (b = np.log2(min_value))
+    that's it!
+    */
+    const uint32_t k = 430 * 128; // limits max time
+    uint32_t arg = 65535 - k * pv / 65536;
+    // setting w is basically the SR scaling: w = freq / SR
+    // here we can just shift b
+    v->glidew = exp2_fast(arg);
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//   ####   #   #    ####    ###    #####   #####//////////////////////////////////////////////////////////////////////////////////////////////
-//  #       #   #   #       #   #     #     #   ///////////////////////////////////////////////////////////////////////////////////////////////
-//  #       #   #   #  ##   #####     #     ### ////////////////////////////////////////////////////////////////////////////////////////////////
-//  #        # #    #   #   #   #     #     #   ///////////////////////////////////////////////////////////////////////////////////////////////
-//   ####     #      ####   #   #     #     #####//////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-float exp2f(float v)
+void midiCvInit(MidiCvOutVoice* v)
 {
-    return v;
-    // TODO: replace this!!!
+    v->pwrange = 12 << 9;
+    v->damperstate = 0;
+    v->keycount = 0;
+    v->velo_last = 0;
+    v->velo_goal = 0;
+    v->velo_slide = 0;
 }
-
-void midi_cv_set_glide(midi_cvout_voiceblock_t* vb, uint16_t val)
+// this must be called on every CR
+void midiCvTap(MidiCvOutVoice* v)
 {
-    // from 2 to 16384
-    float v = (float)val / (65536.0f + 4682.0f) * 14.0f + 14.0f * 4682.0f;
-    v = exp2f(v);
-    vb->glidecoef = (uint16_t)v;
-}
-
-void midi_voiceblock_init(midi_cvout_voiceblock_t* vb)
-{
-    vb->damperstate = 0;
-    vb->keycount = 0;
-    vb->velo_goal = 0;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// 3kHz audio interrupt
-
-#ifndef __USAT
-#define __USAT(value, bit)          \
-    do {                            \
-        if (value > (1 << bit)) {   \
-            value = (1 << bit) - 1; \
-        }                           \
-    } while (0)
-#endif
-
-void midi_cr_cvgprocess(midi_cvout_voiceblock_t* vb)
-{
-    // TODO: multiply
-    vb->pitch_slide += (vb->pitch_goal + vb->glidecoef - vb->pitch_slide) / vb->glidecoef;
-    vb->velo_slide += (vb->velo_goal + vb->glidecoef - vb->velo_slide) / vb->glidecoef;
-    if (vb->retrigrequest) {
-        vb->retrigrequest--;
-        vb->out[MIDI_CVGVB_CH_VELO] = 0;
-        vb->out[MIDI_CVGVB_CH_VELO_LAST] = 0;
-    } else {
-        vb->out[MIDI_CVGVB_CH_VELO] = vb->velo_slide >> 15;
-        vb->out[MIDI_CVGVB_CH_VELO_LAST] = vb->velo_last << 9;
-    }
-    int32_t pitch = vb->pitch_slide + vb->pwshift;
-    if (pitch > 0)
-        __USAT(pitch, 30);
-    else
+    v->pitch_slide += (v->pitch_goal - v->pitch_slide) / 65536 * v->glidew;
+    v->velo_slide += (v->velo_goal - v->velo_slide) / 65536 * v->glidew;
+    int32_t pitch = v->pitch_slide / 32768 + v->pwshift;
+    if (pitch < 0) {
         pitch = 0;
-    vb->out[MIDI_CVGVB_CH_PITCH] = vb->pitch_slide >> 14;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// sequencer output
-static void mcc_default(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
-{
-    (void)mes;
-    (void)vb;
-}
-static void mcc_dat_mw_h(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
-{
-    vb->out[MIDI_CVGVB_CH_MODWHEEL] &= 0x01FF;
-    vb->out[MIDI_CVGVB_CH_MODWHEEL] |= mes.byte3 << 9;
-}
-static void mcc_dat_mw_l(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
-{
-    vb->out[MIDI_CVGVB_CH_MODWHEEL] &= 0xFE00;
-    vb->out[MIDI_CVGVB_CH_MODWHEEL] |= mes.byte3 << 2;
-}
-static void mcc_dat_damperpedal(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
-{
-    if (mes.byte3 > 0x40) {
-        vb->damperstate = 1;
+    } else if (pitch > 65535) {
+        pitch = 65535;
+    }
+    v->out[MIDI_CV_CH_PITCH] = pitch;
+#ifdef MIDI_CV_RETRIG_OPTION
+    if (v->retrigrequest) {
+        v->retrigrequest--;
+        v->out[MIDI_CV_CH_VELO] = 0;
+        v->out[MIDI_CV_CH_VELO_LAST] = 0;
     } else {
-        vb->damperstate = 0;
-        if (vb->keycount == 0) {
-            vb->velo_goal = 0;
+        v->out[MIDI_CV_CH_VELO_LAST] = v->velo_last << 9;
+        v->out[MIDI_CV_CH_VELO] = v->velo_slide / 32768;
+    }
+#else
+    v->out[MIDI_CV_CH_VELO_LAST] = v->velo_last << 9;
+    v->out[MIDI_CV_CH_VELO] = v->velo_slide / 32768;
+#endif // MIDI_CV_RETRIG_OPTION
+}
+
+static void mCv_cc(MidiMessageT m, MidiCvOutVoice* v)
+{
+    switch (m.byte2) {
+    case 0x1: // modwheel
+        v->out[MIDI_CV_CH_MODWHEEL] &= 0x01FF;
+        v->out[MIDI_CV_CH_MODWHEEL] |= m.byte3 << 9;
+        break;
+    case 0x21:
+        v->out[MIDI_CV_CH_MODWHEEL] &= 0xFE00;
+        v->out[MIDI_CV_CH_MODWHEEL] |= m.byte3 << 2;
+        break;
+    case 0x2: // breath
+        v->out[MIDI_CV_CH_BREATH] &= 0x01FF;
+        v->out[MIDI_CV_CH_BREATH] |= m.byte3 << 9;
+        break;
+    case 0x22:
+        v->out[MIDI_CV_CH_BREATH] &= 0xFE00;
+        v->out[MIDI_CV_CH_BREATH] |= m.byte3 << 2;
+        break;
+    case 0x3: // undefined
+        // let it be pitch bend range in semitones
+        v->pwrange = (m.byte3 >> 1) << 9;
+        break;
+    case 0x5: // portamento
+        v->portamento &= 0x01FF;
+        v->portamento |= m.byte3 << 9;
+        midiCvSetGlide(v, v->portamento);
+        break;
+    case 0x25:
+        v->portamento &= 0xFE00;
+        v->portamento |= m.byte3 << 2;
+        midiCvSetGlide(v, v->portamento);
+        break;
+    case 0x40: // damper
+        if (m.byte3 > 0x40) {
+            v->damperstate = 1;
+        } else {
+            v->damperstate = 0;
+            if (v->keycount == 0) {
+                v->velo_last = 0;
+                v->velo_goal = 0;
+                v->velo_slide = 0;
+            }
         }
+        break;
+    case 0x70: // ASO
+    case 0x73: // ANO
+        v->damperstate = 0;
+        v->keycount = 0;
+        v->velo_last = 0;
+        v->velo_goal = 0;
+        v->velo_slide = 0;
+        break;
+#ifdef MIDI_CV_RETRIG_OPTION
+    case 0x7E: // mono
+        v->gateretrig = 0;
+        break;
+    case 0x7F: // poly
+        v->gateretrig = 1;
+        break;
+#endif // MIDI_CV_RETRIG_OPTION
+    default:
+        break;
     }
-}
-static void mcc_dat_breath_h(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
-{
-    vb->out[MIDI_CVGVB_CH_BREATH] &= 0x01FF;
-    vb->out[MIDI_CVGVB_CH_BREATH] |= mes.byte3 << 9;
-}
-static void mcc_dat_breath_l(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
-{
-    vb->out[MIDI_CVGVB_CH_BREATH] &= 0xFE00;
-    vb->out[MIDI_CVGVB_CH_BREATH] |= mes.byte3 << 2;
-}
-static void mcc_panic(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
-{
-    midi_voiceblock_init(vb);
-    (void)mes;
 }
 
-typedef enum {
-    MCC__DEFAULT = 0,
-    MCC_MODWHL_H,
-    MCC_MODWHL_L,
-    MCC_DMPRPEDL,
-    MCC_ALLSNDOF,
-    MCC_ALLNTSOF,
-    MCC_BREATH_H,
-    MCC_BREATH_L,
-    MCC_TOTAL
-} midi_noncc_en;
-static void (*const ccn[MCC_TOTAL])(MidiMessageT mes, midi_cvout_voiceblock_t* vb) = {
-    mcc_default, // MCC__DEFAULT
-    mcc_dat_mw_h, // MCC_MODWHL_H
-    mcc_dat_mw_l, // MCC_MODWHL_L
-    mcc_dat_damperpedal, // MCC_DMPRPEDL
-    mcc_panic, // MCC_ALLSNDOF
-    mcc_panic, // MCC_ALLNTSOF
-    mcc_dat_breath_h,
-    mcc_dat_breath_l,
-};
-static const uint8_t cc_table[128] = {
-    MCC__DEFAULT, MCC_MODWHL_H, MCC_BREATH_H, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //   0  0x00
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //   8  0x08
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  16  0x10
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  24  0x18
-    MCC__DEFAULT, MCC_MODWHL_L, MCC_BREATH_L, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  32  0x20
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  40  0x28
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  48  0x30
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  56  0x38
-    MCC_DMPRPEDL, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  64  0x40
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  72  0x48
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  80  0x50
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  88  0x58
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, //  96  0x60
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, // 104  0x68
-    MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, // 112  0x70
-    MCC_ALLSNDOF, MCC__DEFAULT, MCC__DEFAULT, MCC_ALLNTSOF, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, MCC__DEFAULT, // 120  0x78
-};
-
-static void mtcv_na(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
+static void mCv_na(MidiMessageT m, MidiCvOutVoice* v)
 {
-    (void)mes;
-    (void)vb;
+    (void)m;
+    (void)v;
 }
-static void mtcv_pb(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
+static void mCv_pb(MidiMessageT m, MidiCvOutVoice* v)
 {
-    int16_t value = (mes.byte2 | (mes.byte3 << 7)) - 0x2000;
-    vb->pwshift = vb->pw_range * value * 0x400;
+    int16_t value = (m.byte2 | (m.byte3 << 7)) - 0x2000;
+    v->pwshift = (int32_t)v->pwrange * value / 0x2000;
 }
-static void mtcv_at(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
+static void mCv_at(MidiMessageT m, MidiCvOutVoice* v)
 {
-    vb->out[MIDI_CVGVB_CH_AFTERTOUCH] = mes.byte2 << 9;
-}
-static void mtcv_cc(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
-{
-    ccn[cc_table[mes.byte2]](mes, vb);
+    v->out[MIDI_CV_CH_AFTERTOUCH] = m.byte2 << 9;
 }
 
-static void mtcv_non(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
+static void mCv_non(MidiMessageT m, MidiCvOutVoice* v)
 {
-    uint8_t i;
-    uint8_t note = mes.byte2;
-    uint8_t velo = mes.byte3;
-    if (vb->keycount < NOTE_HOLD_MAX_MEMORY) {
-        vb->keycount++;
+    uint8_t note = m.byte2;
+    uint8_t velo = m.byte3;
+    if (v->keycount < NOTE_HOLD_MAX_MEMORY) {
+        v->keycount++;
     }
-    for (i = vb->keycount; i > 0; i--) // scan from bottom to top
-    {
-        vb->notememory[i] = vb->notememory[i - 1]; // shift the whole used part of buffer down (from the priority pov)
+    // scan from bottom to top
+    for (int i = v->keycount; i > 0; i--) {
+        // shift the whole used part of buffer down (from the priority pov)
+        v->notememory[i] = v->notememory[i - 1];
     }
-    vb->notememory[0].note = note; // and put new note at the top
-    vb->notememory[0].velocity = velo;
-    vb->pitch_goal = note << 23;
-    vb->velo_goal = velo << 24;
-    if ((vb->gateretrig) || ((vb->keycount == 1) && (vb->damperstate == 0))) {
-        vb->pitch_slide = note << 23;
-        vb->velo_slide = velo << 24;
-        vb->retrigrequest = 2;
+    // and put new note at the top
+    v->notememory[0].note = note;
+    v->notememory[0].velocity = velo;
+    v->pitch_goal = note << 24;
+    v->velo_goal = velo << 24;
+    v->velo_last = velo;
+#ifdef MIDI_CV_RETRIG_OPTION
+    if ((v->gateretrig) || ((v->keycount == 1) && (v->damperstate == 0))) {
+        v->pitch_slide = note << 24;
+        v->velo_slide = velo << 24;
+        v->retrigrequest = RETRIG_TIME_CR_CYCLES;
     }
+#endif // MIDI_CV_RETRIG_OPTION
 }
-static void mtcv_noff(MidiMessageT mes, midi_cvout_voiceblock_t* vb)
+static void mCv_noff(MidiMessageT m, MidiCvOutVoice* v)
 {
-    uint8_t i;
-    uint8_t note = mes.byte2;
-    for (i = 0; i < vb->keycount; i++) // scan note buffer
-    {
-        if (vb->notememory[i].note == note) // if we found note, release it...
-        {
-            vb->keycount--; // decrement
-            for (; i < vb->keycount; i++) {
-                vb->notememory[i] = vb->notememory[i + 1]; // shift other notes
+    uint8_t note = m.byte2;
+    // scan note buffer
+    for (int i = 0; i < v->keycount; i++) {
+        // if we found note, release it...
+        if (v->notememory[i].note == note) {
+            v->keycount--; // decrement
+            for (; i < v->keycount; i++) {
+                // shift other notes
+                v->notememory[i] = v->notememory[i + 1];
             }
             // i == notes holded, exit
             if (i == 0) {
                 // retrig
-                if (vb->keycount) {
-                    if (vb->gateretrig) {
-                        vb->pitch_slide = vb->notememory[0].note << 23;
-                        vb->velo_slide = vb->notememory[0].velocity << 24;
-                        vb->retrigrequest = 2;
+                if (v->keycount) {
+                    v->pitch_goal = v->notememory[0].note << 24;
+                    v->velo_goal = v->notememory[0].velocity << 24;
+#ifdef MIDI_CV_RETRIG_OPTION
+                    if (v->gateretrig) {
+                        v->pitch_slide = v->notememory[0].note << 24;
+                        v->velo_slide = v->notememory[0].velocity << 24;
+                        v->retrigrequest = RETRIG_TIME_CR_CYCLES;
                     }
-                    vb->pitch_goal = vb->notememory[0].note << 23;
-                    vb->velo_goal = vb->notememory[0].velocity << 24;
+#endif // MIDI_CV_RETRIG_OPTION
                 } else {
-                    if (vb->damperstate == 0) {
-                        vb->velo_goal = 0;
+                    if (v->damperstate == 0) {
+                        v->velo_last = 0;
+                        v->velo_goal = 0;
+                        v->velo_slide = 0;
                     }
                 }
             }
         }
     }
 }
-static void (*const midi_tocvg[16])(MidiMessageT mes, midi_cvout_voiceblock_t* vb) = {
-    mtcv_na, // 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.        | not used at all
-    mtcv_na, // 0x1 1, 2 or 3 Cable events. Reserved for future expansion.                         | not used at all
-    mtcv_na, // 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.                   | systemonly
-    mtcv_na, // 0x3 3 Three-byte System Common messages like SPP, etc.                             | systemonly
-    mtcv_na, // 0x4 3 SysEx starts or continues                                                    | maybe seq, or systemonly
-    mtcv_na, // 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.  | maybe seq, or systemonly
-    mtcv_na, // 0x6 2 SysEx ends with following two bytes.                                         | maybe seq, or systemonly
-    mtcv_na, // 0x7 3 SysEx ends with following three bytes.                                       | maybe seq, or systemonly
-    mtcv_noff, // 0x8 3 Note-off                                                                     | seq
-    mtcv_non, // 0x9 3 Note-on                                                                      | seq
-    mtcv_na, // 0xA 3 Poly-KeyPress                                                                | seq
-    mtcv_cc, // 0xB 3 Control Change                                                               | seq
-    mtcv_na, // 0xC 2 Program Change                                                               | seq
-    mtcv_at, // 0xD 2 Channel Pressure                                                             | seq
-    mtcv_pb, // 0xE 3 PitchBend Change                                                             | seq
-    mtcv_na // 0xF 1 Single Byte                                                                  | systemonly
+
+static void (*const midi_tocv[16])(MidiMessageT m, MidiCvOutVoice* v) = {
+    mCv_na, // 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.        | not used at all
+    mCv_na, // 0x1 1, 2 or 3 Cable events. Reserved for future expansion.                         | not used at all
+    mCv_na, // 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.                   | systemonly
+    mCv_na, // 0x3 3 Three-byte System Common messages like SPP, etc.                             | systemonly
+    mCv_na, // 0x4 3 SysEx starts or continues                                                    | maybe seq, or systemonly
+    mCv_na, // 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.  | maybe seq, or systemonly
+    mCv_na, // 0x6 2 SysEx ends with following two bytes.                                         | maybe seq, or systemonly
+    mCv_na, // 0x7 3 SysEx ends with following three bytes.                                       | maybe seq, or systemonly
+    mCv_noff, // 0x8 3 Note-off                                                                     | seq
+    mCv_non, // 0x9 3 Note-on                                                                      | seq
+    mCv_na, // 0xA 3 Poly-KeyPress                                                                | seq
+    mCv_cc, // 0xB 3 Control Change                                                               | seq
+    mCv_na, // 0xC 2 Program Change                                                               | seq
+    mCv_at, // 0xD 2 Channel Pressure                                                             | seq
+    mCv_pb, // 0xE 3 PitchBend Change                                                             | seq
+    mCv_na // 0xF 1 Single Byte                                                                  | systemonly
 };
 
-void midi_cv_transmit(midi_cvout_voiceblock_t* vb, MidiMessageT m)
+void midiCvHandleMessage(MidiCvOutVoice* v, MidiMessageT m)
 {
-    if (m.cn == vb->channel)
-        midi_tocvg[m.cin](m, vb);
+    if (m.cn == v->channel)
+        midi_tocv[m.cin](m, v);
 }
