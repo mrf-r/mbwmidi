@@ -1,3 +1,24 @@
+/*
+Copyright (C) 2024 Eugene Chernyh (mrf-r)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "midi_cvgate.h"
 #include "midi_cc.h"
 
@@ -7,6 +28,7 @@
 #endif
 #endif // MIDI_CV_RETRIG_OPTION
 
+// TODO: separate int math?
 // fast approximation of exp2(x/4096)
 static inline uint16_t exp2_fast(uint16_t x)
 {
@@ -21,6 +43,7 @@ static inline uint16_t exp2_fast(uint16_t x)
 // left aligned
 // 0 - shortest
 // 65535 - longest
+// the actual length will depend on the call rate, so please, make it constant and around 1500-3000 Hz
 static inline void midiCvSetGlide(MidiCvOutVoice* v, const uint16_t pv)
 {
     /*
@@ -36,6 +59,8 @@ static inline void midiCvSetGlide(MidiCvOutVoice* v, const uint16_t pv)
     // here we can just shift b
     v->glidew = exp2_fast(arg);
 }
+
+// TODO: midiCvGetGlideTimeMs(CONTROL_RATE)
 
 void midiCvInit(MidiCvOutVoice* v)
 {
@@ -234,22 +259,22 @@ static void mCv_noff(MidiMessageT m, MidiCvOutVoice* v)
 }
 
 static void (*const midi_tocv[16])(MidiMessageT m, MidiCvOutVoice* v) = {
-    mCv_na, // 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.        | not used at all
-    mCv_na, // 0x1 1, 2 or 3 Cable events. Reserved for future expansion.                         | not used at all
-    mCv_na, // 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.                   | systemonly
-    mCv_na, // 0x3 3 Three-byte System Common messages like SPP, etc.                             | systemonly
-    mCv_na, // 0x4 3 SysEx starts or continues                                                    | maybe seq, or systemonly
-    mCv_na, // 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.  | maybe seq, or systemonly
-    mCv_na, // 0x6 2 SysEx ends with following two bytes.                                         | maybe seq, or systemonly
-    mCv_na, // 0x7 3 SysEx ends with following three bytes.                                       | maybe seq, or systemonly
-    mCv_noff, // 0x8 3 Note-off                                                                     | seq
-    mCv_non, // 0x9 3 Note-on                                                                      | seq
-    mCv_na, // 0xA 3 Poly-KeyPress                                                                | seq
-    mCv_cc, // 0xB 3 Control Change                                                               | seq
-    mCv_na, // 0xC 2 Program Change                                                               | seq
-    mCv_at, // 0xD 2 Channel Pressure                                                             | seq
-    mCv_pb, // 0xE 3 PitchBend Change                                                             | seq
-    mCv_na // 0xF 1 Single Byte                                                                  | systemonly
+    mCv_na, // 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.
+    mCv_na, // 0x1 1, 2 or 3 Cable events. Reserved for future expansion.
+    mCv_na, // 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.
+    mCv_na, // 0x3 3 Three-byte System Common messages like SPP, etc.
+    mCv_na, // 0x4 3 SysEx starts or continues
+    mCv_na, // 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.
+    mCv_na, // 0x6 2 SysEx ends with following two bytes.
+    mCv_na, // 0x7 3 SysEx ends with following three bytes.
+    mCv_noff, // 0x8 3 Note-off
+    mCv_non, // 0x9 3 Note-on
+    mCv_na, // 0xA 3 Poly-KeyPress
+    mCv_cc, // 0xB 3 Control Change
+    mCv_na, // 0xC 2 Program Change
+    mCv_at, // 0xD 2 Channel Pressure
+    mCv_pb, // 0xE 3 PitchBend Change
+    mCv_na // 0xF 1 Single Byte
 };
 
 void midiCvHandleMessage(MidiCvOutVoice* v, MidiMessageT m)

@@ -1,12 +1,39 @@
+/*
+Copyright (C) 2024 Eugene Chernyh (mrf-r)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "midi_uart.h"
 #include "midi_input.h"
 #include "midi_internals.h"
 
+#ifndef MIDI_RUNNINGSTATUS_RESET
 #define MIDI_RUNNINGSTATUS_RESET (MIDI_CLOCK_RATE * 5000 / 1000)
+#endif
+
+#ifndef MIDI_RUNNINGSTATUS_HOLD
 #define MIDI_RUNNINGSTATUS_HOLD (MIDI_CLOCK_RATE * 500 / 1000)
+#endif
+
 #define MIDI_ACTIVESENSE_RESET (MIDI_CLOCK_RATE * 330 / 1000)
 #define MIDI_ACTIVESENSE_SEND (MIDI_CLOCK_RATE * 270 / 1000)
-// 270mS - send 330mS - connection lost
+// 270mS - send; 330mS - connection lost
 
 static void mSh_0syx(uint8_t byte, MidiInUartContextT* cx);
 static void mSh_1mtc(uint8_t byte, MidiInUartContextT* cx);
@@ -30,7 +57,6 @@ static void mDh_3bSingle2(uint8_t byte, MidiInUartContextT* cx);
 static void mDh_3bSingle3(uint8_t byte, MidiInUartContextT* cx);
 static void mDh_2bSingle2(uint8_t byte, MidiInUartContextT* cx);
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // MIDI 2 USB
 static void (*const midi_channel_datahandler[7])(uint8_t byte, MidiInUartContextT* cx) = {
     mDh_3bCont2, // note off                     | note number       | velocity
@@ -164,9 +190,6 @@ void midiInUartByteReceiveCallback(uint8_t byte, MidiInUartContextT* cx, const u
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Status
-
 static void mSh_0syx(uint8_t byte, MidiInUartContextT* cx)
 {
     cx->message.mes.cin = MIDI_CIN_SYSEX3BYTES;
@@ -236,7 +259,6 @@ static void mSh_Esense(uint8_t byte, MidiInUartContextT* cx)
     (void)byte;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 static void mDh_noa(uint8_t byte, MidiInUartContextT* cx)
 {
 #ifndef MIDI_NO_PROTOCOL_FILTER
@@ -252,7 +274,6 @@ static void mDh_noa(uint8_t byte, MidiInUartContextT* cx)
 #endif
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // channel messages with running status
 static void mDh_3bCont2(uint8_t byte, MidiInUartContextT* cx)
 {
@@ -283,7 +304,6 @@ static void mDh_2bCont2(uint8_t byte, MidiInUartContextT* cx)
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // sysex bulk messages
 static void mDh_syx2(uint8_t byte, MidiInUartContextT* cx)
 {
@@ -306,7 +326,6 @@ static void mDh_syx1(uint8_t byte, MidiInUartContextT* cx)
     cx->data_handler = mDh_syx2;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // system
 static void mDh_3bSingle2(uint8_t byte, MidiInUartContextT* cx)
 {
@@ -325,13 +344,6 @@ static void mDh_2bSingle2(uint8_t byte, MidiInUartContextT* cx)
     cx->data_handler = mDh_noa;
     midiTsWrite(cx->message.mes, cx->message.timestamp);
 }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// out
 
 // init uart out structures
 void midiOutUartInit(MidiOutUartPortT* p)
@@ -353,22 +365,22 @@ typedef struct
 } mptbms_t;
 
 static const uint8_t cin_len[16] = {
-    0, // 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.        | not used at all
-    0, // 0x1 1, 2 or 3 Cable events. Reserved for future expansion.                         | not used at all
-    2 + 1, // 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.                   | systemonly
-    3 + 1, // 0x3 3 Three-byte System Common messages like SPP, etc.                             | systemonly
-    3 + 1, // 0x4 3 SysEx starts or continues                                                    | maybe seq, or systemonly
-    1 + 1, // 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.  | maybe seq, or systemonly
-    2 + 1, // 0x6 2 SysEx ends with following two bytes.                                         | maybe seq, or systemonly
-    3 + 1, // 0x7 3 SysEx ends with following three bytes.                                       | maybe seq, or systemonly
-    3 + 1, // 0x8 3 Note-off                                                                     | seq
-    3 + 1, // 0x9 3 Note-on                                                                      | seq
-    3 + 1, // 0xA 3 Poly-KeyPress                                                                | seq
-    3 + 1, // 0xB 3 Control Change                                                               | seq
-    2 + 1, // 0xC 2 Program Change                                                               | seq
-    2 + 1, // 0xD 2 Channel Pressure                                                             | seq
-    3 + 1, // 0xE 3 PitchBend Change                                                             | seq
-    1 + 1, // 0xF 1 Single Byte                                                                  | systemonly
+    0, // 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.
+    0, // 0x1 1, 2 or 3 Cable events. Reserved for future expansion.
+    2 + 1, // 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.
+    3 + 1, // 0x3 3 Three-byte System Common messages like SPP, etc.
+    3 + 1, // 0x4 3 SysEx starts or continues
+    1 + 1, // 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.
+    2 + 1, // 0x6 2 SysEx ends with following two bytes.
+    3 + 1, // 0x7 3 SysEx ends with following three bytes.
+    3 + 1, // 0x8 3 Note-off
+    3 + 1, // 0x9 3 Note-on
+    3 + 1, // 0xA 3 Poly-KeyPress
+    3 + 1, // 0xB 3 Control Change
+    2 + 1, // 0xC 2 Program Change
+    2 + 1, // 0xD 2 Channel Pressure
+    3 + 1, // 0xE 3 PitchBend Change
+    1 + 1, // 0xF 1 Single Byte
 };
 
 // called by uart irq handler to continue or stop transmission

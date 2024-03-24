@@ -1,14 +1,36 @@
+/*
+Copyright (C) 2024 Eugene Chernyh (mrf-r)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "midi_input.h"
 #include "midi_internals.h"
 
 // unsigned power of 2 only!
+#ifndef MIDI_RX_BUFFER_SIZE
 #define MIDI_RX_BUFFER_SIZE (256)
-#define MIDI_RX_SYSEX_BUFFER_SIZE (256)
+#endif
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#ifndef MIDI_RX_SYSEX_BUFFER_SIZE
+#define MIDI_RX_SYSEX_BUFFER_SIZE (256)
+#endif
+
 // main buffer input - can also be called from isr
 static volatile MidiTsMessageT m_buffer[MIDI_RX_BUFFER_SIZE];
 static volatile uint16_t m_wp;
@@ -18,23 +40,22 @@ static volatile uint16_t m_sysex_wp;
 static volatile uint16_t m_sysex_rp;
 static volatile uint8_t m_sysex_cn;
 
-// this table is just historic, i don't remember what is the second column
-// 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.        | not used at all
-// 0x1 1, 2 or 3 Cable events. Reserved for future expansion.                         | not used at all
-// 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.                   | systemonly
-// 0x3 3 Three-byte System Common messages like SPP, etc.                             | systemonly
-// 0x4 3 SysEx starts or continues                                                    | maybe seq, or systemonly
-// 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.  | maybe seq, or systemonly
-// 0x6 2 SysEx ends with following two bytes.                                         | maybe seq, or systemonly
-// 0x7 3 SysEx ends with following three bytes.                                       | maybe seq, or systemonly
-// 0x8 3 Note-off                                                                     | seq
-// 0x9 3 Note-on                                                                      | seq
-// 0xA 3 Poly-KeyPress                                                                | seq
-// 0xB 3 Control Change                                                               | seq
-// 0xC 2 Program Change                                                               | seq
-// 0xD 2 Channel Pressure                                                             | seq
-// 0xE 3 PitchBend Change                                                             | seq
-// 0xF 1 Single Byte                                                                  | systemonly
+// 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.
+// 0x1 1, 2 or 3 Cable events. Reserved for future expansion.
+// 0x2 2 Two-byte System Common messages like MTC, SongSelect, etc.
+// 0x3 3 Three-byte System Common messages like SPP, etc.
+// 0x4 3 SysEx starts or continues
+// 0x5 1 Single-byte System Common Message or SysEx ends with following single byte.
+// 0x6 2 SysEx ends with following two bytes.
+// 0x7 3 SysEx ends with following three bytes.
+// 0x8 3 Note-off
+// 0x9 3 Note-on
+// 0xA 3 Poly-KeyPress
+// 0xB 3 Control Change
+// 0xC 2 Program Change
+// 0xD 2 Channel Pressure
+// 0xE 3 PitchBend Change
+// 0xF 1 Single Byte
 
 uint16_t midiUtilisationGet()
 {

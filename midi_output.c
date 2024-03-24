@@ -1,30 +1,30 @@
+/*
+Copyright (C) 2024 Eugene Chernyh (mrf-r)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "midi_output.h"
 #include "midi_internals.h"
 
-typedef enum { // TODO: unused??
-    CC_DEFAULT = 0,
-    CC____DATH = 0x6,
-    CC____DATL = 0x26,
-    CC__DAMPER = 0x40,
-    CC_____INC = 0x60,
-    CC_____DEC = 0x61,
-    CC__NRPNAH = 0x62,
-    CC__NRPNAL = 0x63,
-    CC___RPNAH = 0x64,
-    CC___RPNAL = 0x65,
-    CC_NTESOFF = 0x78,
-    CC_RESETCC = 0x79,
-    CC_LOCALON = 0x7A,
-    CC_SNDSOFF = 0x7B,
-    CC_OMNIOFF = 0x7C,
-    CC__OMNION = 0x7D,
-    CC__MONOPH = 0x7E,
-    CC__POLYPH = 0x7F,
-} tmcc_nrpn_e;
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+#ifndef MIDI_TX_NRPN_LIFETIME_TICKS
 #define MIDI_TX_NRPN_LIFETIME_TICKS ((uint32_t)(MIDI_CLOCK_RATE * 2)) // 2 seconds probably ok
+#endif
 
 static const uint32_t m_compare_mask[16] = {
     // RIGHT TO LEFT: cin-cn, status_byte, data_bytes
@@ -72,7 +72,6 @@ static MidiRet (*const mPortOptWr[16])(MidiOutPortContextT* cx, MidiMessageT m) 
     mOptWr____Single, // 0xF 1 Single Byte
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 uint16_t midiPortMaxUtilisation(MidiOutPortContextT* cx)
 {
     MIDI_ATOMIC_START();
@@ -236,8 +235,6 @@ void midiPortFlush(MidiOutPortContextT* cx)
     MIDI_ATOMIC_END();
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 static const uint16_t m_cin_priorities[16] = {
     // values must be from 0 (filtered out) to (buffer size - 2)
     (MIDI_TX_BUFFER_SIZE - 2) * 0 / 1, // 0x0 1, 2 or 3 Miscellaneous function codes. Reserved for future extensions.        | not used at all
@@ -343,8 +340,6 @@ static inline MidiRet mCheckBufferSpace(MidiOutPortContextT* cx, uint16_t new_pr
     }
     return ret;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static MidiRet mOptWr________na(MidiOutPortContextT* cx, MidiMessageT m)
 {
@@ -597,8 +592,6 @@ static MidiRet mOptWr____SyxEnd(MidiOutPortContextT* cx, MidiMessageT m)
     }
     return ret;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // MidiRet midi_port_check_rt(MidiOutPortContextT* cx, MidiMessageT* m)
 // {
