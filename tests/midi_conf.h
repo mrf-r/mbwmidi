@@ -17,6 +17,7 @@ extern volatile uint32_t test_clock;
 #define MIDI_GET_CLOCK() (test_clock)
 #define MIDI_CLOCK_RATE (TEST_SAMPLE_RATE)
 
+#define MIDI_CV_RETRIG_OPTION
 
 // maximum 16 cables can be defined !!!!
 typedef enum {

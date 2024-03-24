@@ -1,6 +1,5 @@
 #include "midi_cvgate.h"
-#include "math.h"
-// #include "cmsis_gcc.h"
+#include "midi_cc.h"
 
 #ifdef MIDI_CV_RETRIG_OPTION
 #ifndef RETRIG_TIME_CR_CYCLES
@@ -40,12 +39,24 @@ static inline void midiCvSetGlide(MidiCvOutVoice* v, const uint16_t pv)
 
 void midiCvInit(MidiCvOutVoice* v)
 {
-    v->pwrange = 12 << 9;
+    v->channel = 0;
+    v->pwrange = 12 << 9; // octave
     v->damperstate = 0;
+    v->glidew = 65535;
     v->keycount = 0;
+    v->pitch_goal = 0;
+    v->pitch_slide = 0;
+    v->pwshift = 0;
     v->velo_last = 0;
     v->velo_goal = 0;
     v->velo_slide = 0;
+    for (unsigned i = 0; i < MIDI_CV_CH_TOTAL; i++) {
+        v->out[i] = 0;
+    }
+#ifdef MIDI_CV_RETRIG_OPTION
+    v->gateretrig = 0;
+    v->retrigrequest = 0;
+#endif
 }
 // this must be called on every CR
 void midiCvTap(MidiCvOutVoice* v)
@@ -77,38 +88,38 @@ void midiCvTap(MidiCvOutVoice* v)
 static void mCv_cc(MidiMessageT m, MidiCvOutVoice* v)
 {
     switch (m.byte2) {
-    case 0x1: // modwheel
+    case MIDI_CC_01_MODWHEEL_MSB:
         v->out[MIDI_CV_CH_MODWHEEL] &= 0x01FF;
         v->out[MIDI_CV_CH_MODWHEEL] |= m.byte3 << 9;
         break;
-    case 0x21:
+    case MIDI_CC_21_MODWHEEL_LSB:
         v->out[MIDI_CV_CH_MODWHEEL] &= 0xFE00;
         v->out[MIDI_CV_CH_MODWHEEL] |= m.byte3 << 2;
         break;
-    case 0x2: // breath
+    case MIDI_CC_02_BREATH_MSB:
         v->out[MIDI_CV_CH_BREATH] &= 0x01FF;
         v->out[MIDI_CV_CH_BREATH] |= m.byte3 << 9;
         break;
-    case 0x22:
+    case MIDI_CC_22_BREATH_LSB:
         v->out[MIDI_CV_CH_BREATH] &= 0xFE00;
         v->out[MIDI_CV_CH_BREATH] |= m.byte3 << 2;
         break;
-    case 0x3: // undefined
-        // let it be pitch bend range in semitones
+    case MIDI_CC_03_UNDEF_MSB:
+        // let it be pitch bend range in semitones, but 0..63
         v->pwrange = (m.byte3 >> 1) << 9;
         break;
-    case 0x5: // portamento
+    case MIDI_CC_05_PORTATIME_MSB:
         v->portamento &= 0x01FF;
         v->portamento |= m.byte3 << 9;
         midiCvSetGlide(v, v->portamento);
         break;
-    case 0x25:
+    case MIDI_CC_25_PORTATIME_LSB:
         v->portamento &= 0xFE00;
         v->portamento |= m.byte3 << 2;
         midiCvSetGlide(v, v->portamento);
         break;
-    case 0x40: // damper
-        if (m.byte3 > 0x40) {
+    case MIDI_CC_40_DAMPERPEDAL_SW: // damper
+        if (0 != m.byte3) {
             v->damperstate = 1;
         } else {
             v->damperstate = 0;
@@ -119,8 +130,8 @@ static void mCv_cc(MidiMessageT m, MidiCvOutVoice* v)
             }
         }
         break;
-    case 0x70: // ASO
-    case 0x73: // ANO
+    case MIDI_CC_78_ALLSOUNDOFF_ND:
+    case MIDI_CC_7B_ALLNOTESOFF_ND:
         v->damperstate = 0;
         v->keycount = 0;
         v->velo_last = 0;
@@ -128,10 +139,10 @@ static void mCv_cc(MidiMessageT m, MidiCvOutVoice* v)
         v->velo_slide = 0;
         break;
 #ifdef MIDI_CV_RETRIG_OPTION
-    case 0x7E: // mono
+    case MIDI_CC_7E_MONOPHONIC_ND:
         v->gateretrig = 0;
         break;
-    case 0x7F: // poly
+    case MIDI_CC_7F_POLYPHONIC_ND:
         v->gateretrig = 1;
         break;
 #endif // MIDI_CV_RETRIG_OPTION
@@ -173,13 +184,20 @@ static void mCv_non(MidiMessageT m, MidiCvOutVoice* v)
     v->pitch_goal = note << 24;
     v->velo_goal = velo << 24;
     v->velo_last = velo;
+
+    if (v->damperstate == 0) {
+        if (v->keycount == 1) {
+            v->pitch_slide = note << 24;
+            v->velo_slide = velo << 24;
+        }
 #ifdef MIDI_CV_RETRIG_OPTION
-    if ((v->gateretrig) || ((v->keycount == 1) && (v->damperstate == 0))) {
-        v->pitch_slide = note << 24;
-        v->velo_slide = velo << 24;
-        v->retrigrequest = RETRIG_TIME_CR_CYCLES;
-    }
+        else if (v->gateretrig) {
+            v->pitch_slide = note << 24;
+            v->velo_slide = velo << 24;
+            v->retrigrequest = RETRIG_TIME_CR_CYCLES;
+        }
 #endif // MIDI_CV_RETRIG_OPTION
+    }
 }
 static void mCv_noff(MidiMessageT m, MidiCvOutVoice* v)
 {
@@ -193,25 +211,22 @@ static void mCv_noff(MidiMessageT m, MidiCvOutVoice* v)
                 // shift other notes
                 v->notememory[i] = v->notememory[i + 1];
             }
-            // i == notes holded, exit
-            if (i == 0) {
-                // retrig
-                if (v->keycount) {
-                    v->pitch_goal = v->notememory[0].note << 24;
-                    v->velo_goal = v->notememory[0].velocity << 24;
+            // retrig
+            if (v->keycount) {
+                v->pitch_goal = v->notememory[0].note << 24;
+                v->velo_goal = v->notememory[0].velocity << 24;
 #ifdef MIDI_CV_RETRIG_OPTION
-                    if (v->gateretrig) {
-                        v->pitch_slide = v->notememory[0].note << 24;
-                        v->velo_slide = v->notememory[0].velocity << 24;
-                        v->retrigrequest = RETRIG_TIME_CR_CYCLES;
-                    }
+                if ((v->damperstate == 0) && (v->gateretrig)) {
+                    v->pitch_slide = v->notememory[0].note << 24;
+                    v->velo_slide = v->notememory[0].velocity << 24;
+                    v->retrigrequest = RETRIG_TIME_CR_CYCLES;
+                }
 #endif // MIDI_CV_RETRIG_OPTION
-                } else {
-                    if (v->damperstate == 0) {
-                        v->velo_last = 0;
-                        v->velo_goal = 0;
-                        v->velo_slide = 0;
-                    }
+            } else {
+                if (v->damperstate == 0) {
+                    v->velo_last = 0;
+                    v->velo_goal = 0;
+                    v->velo_slide = 0;
                 }
             }
         }
@@ -239,6 +254,6 @@ static void (*const midi_tocv[16])(MidiMessageT m, MidiCvOutVoice* v) = {
 
 void midiCvHandleMessage(MidiCvOutVoice* v, MidiMessageT m)
 {
-    if (m.cn == v->channel)
+    if (m.midichannel == v->channel)
         midi_tocv[m.cin](m, v);
 }

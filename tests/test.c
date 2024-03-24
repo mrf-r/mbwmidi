@@ -11,6 +11,7 @@ volatile uint32_t test_clock;
 #include "test_out_port_optim.h"
 #include "test_uart_in.h"
 #include "test_uart_out.h"
+#include "test_cvgate.h"
 
 int main()
 {
@@ -24,6 +25,7 @@ int main()
     outPortTests_optim();
     testUartIn();
     testUartOut();
+    testCvgate();
     TEST_RESULTS();
     return tests_result_not_passed;
 }
