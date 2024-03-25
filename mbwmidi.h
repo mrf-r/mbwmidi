@@ -19,55 +19,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#ifndef _MIDI_CONF_H
-#define _MIDI_CONF_H
+#ifndef _MBWMIDI_H
+#define _MBWMIDI_H
 
-// TEMPLATE
+#include "midi.h"
+#include "midi_cc.h"
+#include "midi_input.h"
+#include "midi_output.h"
+#include "midi_uart.h"
+#include "midi_cvgate.h"
 
-#include <stdint.h>
-#include <assert.h>
-#define MIDI_ASSERT assert
-
-
-typedef enum {
-    MIDI_CN_LOCALPANEL = 0,
-    MIDI_CN_USB_DEVICE,
-    MIDI_CN_USB_HOST,
-    MIDI_CN_UART1,
-    MIDI_CN_UART2,
-    MIDI_CN_UART3,
-    MIDI_CN_TOTAL,
-} MidiCnEn;
-
-#if MIDI_CN_TOTAL > 16
-#error "too much input IDs"
-#endif
-
-#define SAMPLE_RATE 48000
-
-extern volatile uint32_t counter_sr;
-
-#define MIDI_GET_CLOCK() (counter_sr)
-#define MIDI_CLOCK_RATE (SAMPLE_RATE)
-
-extern volatile unsigned atomic_level;
-static inline void _atomicStart()
-{
-    MIDI_ASSERT(atomic_level < 2);
-    // TODO: should we get current irq state ?
-    __disable_irq();
-    atomic_level++;
-}
-static inline void _atomicEnd()
-{
-    MIDI_ASSERT(atomic_level);
-    atomic_level--;
-    if (0 == atomic_level) {
-        __enable_irq();
-    }
-}
-
-#define MIDI_ATOMIC_START _atomicStart
-#define MIDI_ATOMIC_END _atomicEnd
-
-#endif // _MIDI_CONF_H
+#endif // _MBWMIDI_H

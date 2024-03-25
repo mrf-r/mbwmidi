@@ -403,7 +403,7 @@ void midiOutUartTranmissionCompleteCallback(MidiOutUartPortT* p)
                 // realtime
                 p->sendByte(m.byte1);
             } else {
-#ifndef MIDI_UART_NOTEOFF_VELOCITY_MATTERS
+#ifndef MIDI_UART_USE_NOTEOFF_VELOCITY // it will break Running Status more often
                 // can not be performed in midiPort,
                 // as NOTEOFF and NOTEON priorities are different
                 // it should be optimized here

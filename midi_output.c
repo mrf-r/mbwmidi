@@ -323,7 +323,7 @@ static inline MidiRet mCheckBufferSpace(MidiOutPortContextT* cx, uint16_t new_pr
     uint16_t utilisation = ((cx->buf_wp - cx->buf_rp) & (MIDI_TX_BUFFER_SIZE - 1));
     if ((MIDI_TX_BUFFER_SIZE - 1) <= utilisation) {
         uint16_t lowest_prio = 0xFFFF;
-        uint16_t lowest_prio_pos;
+        uint16_t lowest_prio_pos = cx->buf_rp; // preinit to satisfy compiler
         for (uint16_t i = cx->buf_rp; i != cx->buf_wp; i = (i + 1) & (MIDI_TX_BUFFER_SIZE - 1)) {
             uint16_t prio = mGetMessagePrio(cx->buf[i]);
             if (prio < lowest_prio) { // oldest will be flushed
