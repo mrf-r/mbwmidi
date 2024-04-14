@@ -1,7 +1,7 @@
 
 
 DIR_SRC := ../
-DIRS_INCLUDE := $(DIR_SRC) ./
+DIRS_INCLUDE := $(DIR_SRC) .
 
 #######################################
 
@@ -23,6 +23,7 @@ FLAGS_C += $(addprefix -I,$(DIRS_INCLUDE))
 # FLAGS_C += -O3
 FLAGS_C += -g3
 FLAGS_C += -Wall -Wpedantic
+# FLAGS_C += -v
 
 #######################################
 $(TARGET_PE): .force_remake
@@ -31,6 +32,7 @@ $(TARGET_PE): $(SOURCES_C) $(INCLUDES_H) .force_remake
 	echo "# will be overwritten by Make" > .gitignore
 	echo ".gitignore" >> .gitignore
 	echo $(TARGET_PE) >> .gitignore
+	echo $(TARGET_PE).exe >> .gitignore
 	gcc $(FLAGS_C) $(SOURCES_C) -o $@
 	./$(TARGET_PE)
 # gcc $(FLAGS_C) $^ -o $@

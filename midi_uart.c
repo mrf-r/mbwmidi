@@ -445,7 +445,7 @@ void midiOutUartTap(MidiOutUartPortT* p)
     int32_t tasdelta = t - ucx->activesense_timer;
     // interrupt does not work or something is wrong with the clock
     // delta can not be high when transmission is active
-    MIDI_ASSERT((MIDI_RET_OK == p->isBusy()) ? (tasdelta > MIDI_ACTIVESENSE_SEND) : 1);
+    MIDI_ASSERT((MIDI_RET_OK == p->isBusy()) ? (tasdelta < MIDI_ACTIVESENSE_SEND) : 1);
 
     if (MIDI_RET_FAIL == p->isBusy()) {
         midiOutUartTranmissionCompleteCallback(p);

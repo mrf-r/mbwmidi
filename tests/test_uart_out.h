@@ -234,6 +234,17 @@ static void testUartOut()
     TEST_ASSERT(0 == uart_out_busy);
     TEST_ASSERT(0 == uart_out_last_byte);
 
+    // check that ASSERT in midiOutUartTap is passed
+    midiOutUartTap(&test_uart_port);
+    midiOutUartTap(&test_uart_port);
+    test_clock++;
+    midiOutUartTap(&test_uart_port);
+    midiOutUartTap(&test_uart_port);
+    test_clock++;
+    midiOutUartTranmissionCompleteCallback(&test_uart_port);
+    midiOutUartTap(&test_uart_port);
+    // test_clock++;
+    // midiOutUartTap(&test_uart_port);
     // midiOutUartTranmissionCompleteCallback(&test_uart_port);
     // printf("debug: %02X" ENDLINE, uart_out_last_byte);
     // midiOutUartTranmissionCompleteCallback(&test_uart_port);
