@@ -39,7 +39,8 @@ typedef enum {
 typedef struct {
     uint16_t current; // midi 14 bit
     uint16_t locked; // midi 14 bit
-    PotStateEn state;
+    uint8_t state; // PotStateEn
+    uint8_t threshold;
 } PotProcData;
 
 // adc is right aligned
@@ -60,10 +61,9 @@ static inline void potLock(PotProcData* const pd, const uint16_t value, const ui
 {
     MIDI_ASSERT(value < 0x4000);
     uint16_t current = pd->current;
-    // new_value means that we need to reach and cross it
-    // in case we are on the edge, crossing may become complicated
-    // so we will use LOCK_INSIDE on the edges
-    if ((is_new_val) && (current > POT_LOCK_THRSH) && (current < (0x4000 - POT_LOCK_THRSH))) {
+    int delta = current - value;
+    int d = delta < 0 ? -delta : delta;
+    if ((is_new_val) && (d > POT_LOCK_THRSH)) {
         pd->locked = value;
         if (value < current) {
             pd->state = POT_STATE_LOCK_LOW;
@@ -76,14 +76,21 @@ static inline void potLock(PotProcData* const pd, const uint16_t value, const ui
     }
 }
 
-static inline void potProcess(PotProcData* const pd, MidiMessageT m, const int32_t threshold)
+static inline void potThresholdSet(PotProcData* const pd, uint8_t const thr)
 {
-    int16_t current = pd->current;
+    MIDI_ASSERT(thr < 128);
+    pd->threshold = thr;
+}
+
+static inline void potProcess(PotProcData* const pd, MidiMessageT m, uint16_t const value)
+{
+    int16_t current = value;
+    pd->current = value;
     int16_t locked = pd->locked;
     int delta = current - locked;
     int d = delta < 0 ? -delta : delta;
     if (POT_STATE_NORMAL == pd->state) {
-        if (d > threshold) {
+        if (d > pd->threshold) {
             int16_t bitdiff = current ^ locked;
             if (bitdiff >> 7) {
                 m.byte3 = current >> 7;
@@ -98,8 +105,8 @@ static inline void potProcess(PotProcData* const pd, MidiMessageT m, const int32
         }
     } else if (
         ((POT_STATE_LOCK_INSIDE == pd->state) && (d > POT_LOCK_THRSH))
-        || ((POT_STATE_LOCK_LOW == pd->state) && (current < locked))
-        || ((POT_STATE_LOCK_HIGH == pd->state) && (current > locked))) {
+        || ((POT_STATE_LOCK_LOW == pd->state) && ((current < locked) || (d < POT_LOCK_THRSH / 2)))
+        || ((POT_STATE_LOCK_HIGH == pd->state) && ((current > locked) || (d < POT_LOCK_THRSH / 2)))) {
         m.byte3 = current >> 7;
         midiNonSysexWrite(m);
         m.byte2 += 0x20;
