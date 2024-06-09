@@ -57,13 +57,13 @@ static inline uint16_t potFilter(int32_t* const filter, const uint16_t adc, cons
 }
 
 // value is 14 bit midi resolution, right aligned
-static inline void potLock(PotProcData* const pd, const uint16_t value, const uint8_t is_new_val)
+static inline void potLockFetch(PotProcData* const pd, const uint16_t value)
 {
     MIDI_ASSERT(value < 0x4000);
     uint16_t current = pd->current;
     int delta = current - value;
     int d = delta < 0 ? -delta : delta;
-    if ((is_new_val) && (d > POT_LOCK_THRSH)) {
+    if (d > POT_LOCK_THRSH) {
         pd->locked = value;
         if (value < current) {
             pd->state = POT_STATE_LOCK_LOW;
@@ -75,6 +75,32 @@ static inline void potLock(PotProcData* const pd, const uint16_t value, const ui
         pd->state = POT_STATE_LOCK_INSIDE;
     }
 }
+
+static inline void potLockJump(PotProcData* const pd)
+{
+    pd->locked = pd->current;
+    pd->state = POT_STATE_LOCK_INSIDE;
+}
+
+static inline uint16_t parameterReceiveMsb(const uint16_t old_value, const uint8_t msb)
+{
+    MIDI_ASSERT(msb < 0x80);
+    uint16_t new_value = msb << 7;
+    if (new_value > old_value) {
+        return new_value;
+    } else if (new_value < (old_value & 0x3F80)) {
+        return new_value | 0x7F;
+    } else {
+        return old_value;
+    }
+}
+
+static inline uint16_t parameterReceiveLsb(const uint16_t old_value, const uint8_t lsb)
+{
+    MIDI_ASSERT(lsb < 0x80);
+    return (old_value & 0x3F80) | lsb;
+}
+
 
 static inline void potThresholdSet(PotProcData* const pd, uint8_t const thr)
 {
