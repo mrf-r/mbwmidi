@@ -1,7 +1,7 @@
 
 
 DIR_SRC := ../..
-DIRS_INCLUDE := $(DIR_SRC) $(DIR_SRC)/tools ./
+DIRS_INCLUDE := $(DIR_SRC) $(DIR_SRC)/tools .
 
 #######################################
 

@@ -36,11 +36,13 @@ typedef enum {
 #define POT_LOCK_THRSH (128)
 #endif
 
+// all values are 14bit
 typedef struct {
-    uint16_t current; // midi 14 bit
-    uint16_t locked; // midi 14 bit
-    uint8_t state; // PotStateEn
-    uint8_t threshold;
+    uint16_t pot_position;
+    uint16_t lock_n_midi_compare; // and also midi
+    uint8_t state;
+    uint8_t midi_threshold;
+    uint16_t output;
 } PotProcData;
 
 // adc is right aligned
@@ -53,33 +55,131 @@ static inline uint16_t potFilter(int32_t* const filter, const uint16_t adc, cons
     int32_t cf = delta < 0 ? -delta : delta;
     f += delta * cf;
     *filter = f;
-    return f >> 16;
+    return f / 65536;
 }
 
-// value is 14 bit midi resolution, right aligned
-static inline void potLockFetch(PotProcData* const pd, const uint16_t value)
+// less "absolute", more practical. To fill the scale edges
+static inline uint16_t potFilterCompensated(int32_t* const filter, const uint16_t adc, const uint32_t lcg, const unsigned ADC_BITS)
 {
-    MIDI_ASSERT(value < 0x4000);
-    uint16_t current = pd->current;
-    int delta = current - value;
+    int32_t knob = adc << (30 - ADC_BITS);
+    knob += adc << (30 - ADC_BITS - ADC_BITS); // fill the lowest bits
+    knob += (adc << (16 - ADC_BITS)) - 0x8000; // make edges more clear
+    // probably 2048 can be adjusted
+    int32_t noise = (int32_t)lcg / 2048;
+    knob += noise;
+
+    int32_t f = *filter;
+    int32_t delta = knob - f;
+    delta = delta / 32768; // can also be adjusted
+    int32_t cf = delta < 0 ? -delta : delta;
+    f += delta * cf;
+    *filter = f;
+    f /= 65536;
+    if (f < 0) {
+        f = 0;
+    } else if (f > 0x3FFF) {
+        f = 0x3FFF;
+    }
+    return f;
+}
+
+static inline void potMidiThresholdSet(PotProcData* const pd, uint8_t const thr)
+{
+    MIDI_ASSERT(thr < 128);
+    pd->midi_threshold = thr;
+}
+
+static inline void potInit(PotProcData* const pd, uint16_t value14b, uint16_t midi_threshold)
+{
+    pd->state = POT_STATE_NORMAL;
+    pd->pot_position = pd->lock_n_midi_compare = pd->output = value14b;
+    potMidiThresholdSet(pd, midi_threshold);
+}
+
+static inline uint16_t potGetValue(PotProcData* const pd)
+{
+    return pd->output;
+}
+
+static inline void potLockOnIncomingValue(PotProcData* const pd, const uint16_t value14b)
+{
+    MIDI_ASSERT(value14b < 0x4000);
+    uint16_t pot_position = pd->pot_position;
+    int delta = pot_position - value14b;
     int d = delta < 0 ? -delta : delta;
     if (d > POT_LOCK_THRSH) {
-        pd->locked = value;
-        if (value < current) {
+        if (value14b < pot_position) {
             pd->state = POT_STATE_LOCK_LOW;
         } else {
             pd->state = POT_STATE_LOCK_HIGH;
         }
+        pd->lock_n_midi_compare = value14b;
     } else {
-        pd->locked = current;
         pd->state = POT_STATE_LOCK_INSIDE;
+        pd->lock_n_midi_compare = pot_position;
+    }
+    pd->output = value14b;
+}
+
+static inline void potLockOnCurrentValue(PotProcData* const pd)
+{
+    pd->state = POT_STATE_LOCK_INSIDE;
+    pd->lock_n_midi_compare = pd->pot_position;
+}
+
+static inline void potProcessLocalValueWithMidiSend(PotProcData* const pd, MidiMessageT m, uint16_t const value14b)
+{
+    int16_t pot_position = value14b;
+    pd->pot_position = value14b;
+    int16_t lock_n_midi_compare = pd->lock_n_midi_compare;
+    int delta = pot_position - lock_n_midi_compare;
+    int d = delta < 0 ? -delta : delta;
+    if (POT_STATE_NORMAL == pd->state) {
+        if (d > pd->midi_threshold) {
+            int16_t bitdiff = pot_position ^ lock_n_midi_compare;
+            if (bitdiff >> 7) {
+                m.byte3 = pot_position >> 7;
+                midiNonSysexWrite(m);
+            }
+            if (bitdiff & 0x7F) {
+                m.byte2 += 0x20;
+                m.byte3 = pot_position & 0x7F;
+                midiNonSysexWrite(m);
+            }
+            pd->lock_n_midi_compare = pot_position;
+        }
+        pd->output = pot_position;
+    } else if (
+        ((POT_STATE_LOCK_INSIDE == pd->state) && (d > POT_LOCK_THRSH))
+        || ((POT_STATE_LOCK_LOW == pd->state) && ((pot_position < lock_n_midi_compare) || (d < POT_LOCK_THRSH / 2)))
+        || ((POT_STATE_LOCK_HIGH == pd->state) && ((pot_position > lock_n_midi_compare) || (d < POT_LOCK_THRSH / 2)))) {
+        pd->state = POT_STATE_NORMAL;
+        m.byte3 = pot_position >> 7;
+        midiNonSysexWrite(m);
+        m.byte2 += 0x20;
+        m.byte3 = pot_position & 0x7F;
+        midiNonSysexWrite(m);
+        pd->lock_n_midi_compare = pot_position;
+        pd->output = pot_position;
     }
 }
 
-static inline void potLockJump(PotProcData* const pd)
+static inline void potProcessLocalValue(PotProcData* const pd, uint16_t const value14b)
 {
-    pd->locked = pd->current;
-    pd->state = POT_STATE_LOCK_INSIDE;
+    int16_t pot_position = value14b;
+    pd->pot_position = value14b;
+    int16_t lock_n_midi_compare = pd->lock_n_midi_compare;
+    int delta = pot_position - lock_n_midi_compare;
+    int d = delta < 0 ? -delta : delta;
+    if (POT_STATE_NORMAL == pd->state) {
+        pd->output = pot_position;
+    } else if (
+        ((POT_STATE_LOCK_INSIDE == pd->state) && (d > POT_LOCK_THRSH))
+        || ((POT_STATE_LOCK_LOW == pd->state) && ((pot_position < lock_n_midi_compare) || (d < POT_LOCK_THRSH / 2)))
+        || ((POT_STATE_LOCK_HIGH == pd->state) && ((pot_position > lock_n_midi_compare) || (d < POT_LOCK_THRSH / 2)))) {
+        pd->state = POT_STATE_NORMAL;
+        pd->output = pot_position;
+    }
 }
 
 static inline uint16_t parameterReceiveMsb(const uint16_t old_value, const uint8_t msb)
@@ -101,46 +201,18 @@ static inline uint16_t parameterReceiveLsb(const uint16_t old_value, const uint8
     return (old_value & 0x3F80) | lsb;
 }
 
-
-static inline void potThresholdSet(PotProcData* const pd, uint8_t const thr)
+static inline void potReceiveMsb(PotProcData* const pd, const uint8_t msb)
 {
-    MIDI_ASSERT(thr < 128);
-    pd->threshold = thr;
+    uint16_t pot_position = potGetValue(pd);
+    uint16_t new = parameterReceiveMsb(pot_position, msb);
+    potLockOnIncomingValue(pd, new);
 }
 
-static inline void potProcess(PotProcData* const pd, MidiMessageT m, uint16_t const value)
+static inline void potReceiveLsb(PotProcData* const pd, const uint8_t lsb)
 {
-    int16_t current = value;
-    pd->current = value;
-    int16_t locked = pd->locked;
-    int delta = current - locked;
-    int d = delta < 0 ? -delta : delta;
-    if (POT_STATE_NORMAL == pd->state) {
-        if (d > pd->threshold) {
-            int16_t bitdiff = current ^ locked;
-            if (bitdiff >> 7) {
-                m.byte3 = current >> 7;
-                midiNonSysexWrite(m);
-            }
-            if (bitdiff & 0x7F) {
-                m.byte2 += 0x20;
-                m.byte3 = current & 0x7F;
-                midiNonSysexWrite(m);
-            }
-            pd->locked = current;
-        }
-    } else if (
-        ((POT_STATE_LOCK_INSIDE == pd->state) && (d > POT_LOCK_THRSH))
-        || ((POT_STATE_LOCK_LOW == pd->state) && ((current < locked) || (d < POT_LOCK_THRSH / 2)))
-        || ((POT_STATE_LOCK_HIGH == pd->state) && ((current > locked) || (d < POT_LOCK_THRSH / 2)))) {
-        m.byte3 = current >> 7;
-        midiNonSysexWrite(m);
-        m.byte2 += 0x20;
-        m.byte3 = current & 0x7F;
-        midiNonSysexWrite(m);
-        pd->state = POT_STATE_NORMAL;
-        pd->locked = current;
-    }
+    uint16_t pot_position = potGetValue(pd);
+    uint16_t new = parameterReceiveLsb(pot_position, lsb);
+    potLockOnIncomingValue(pd, new);
 }
 
 #endif // _POTPROC_H
