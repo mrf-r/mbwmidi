@@ -36,6 +36,14 @@ typedef enum {
 #define POT_LOCK_THRSH (128)
 #endif
 
+#ifndef POT_FILTER_FACTOR_EXP
+#define POT_FILTER_FACTOR_EXP (15)
+#endif
+
+#ifndef POT_FILTER_FACTOR_LIN
+#define POT_FILTER_FACTOR_LIN (1)
+#endif
+
 // all values are 14bit
 typedef struct {
     uint16_t pot_position;
@@ -51,9 +59,9 @@ static inline uint16_t potFilter(int32_t* const filter, const uint16_t adc, cons
     int32_t knob = (adc << (30 - ADC_BITS)) + (lcg >> (2 + ADC_BITS));
     int32_t f = *filter;
     int32_t delta = knob - f; // delta is +/-30 bit
-    delta = delta / 32768; // + (delta < 0 ? -1 : 1); // now 15 bit
+    delta = delta / (1 << POT_FILTER_FACTOR_EXP);
     int32_t cf = delta < 0 ? -delta : delta;
-    f += delta * cf;
+    f += delta * cf / POT_FILTER_FACTOR_LIN;
     *filter = f;
     return f / 65536;
 }
@@ -70,9 +78,9 @@ static inline uint16_t potFilterCompensated(int32_t* const filter, const uint16_
 
     int32_t f = *filter;
     int32_t delta = knob - f;
-    delta = delta / 32768; // can also be adjusted
+    delta = delta / (1 << POT_FILTER_FACTOR_EXP);
     int32_t cf = delta < 0 ? -delta : delta;
-    f += delta * cf;
+    f += delta * cf / POT_FILTER_FACTOR_LIN;
     *filter = f;
     f /= 65536;
     if (f < 0) {
@@ -99,6 +107,11 @@ static inline void potInit(PotProcData* const pd, uint16_t value14b, uint16_t mi
 static inline uint16_t potGetValue(PotProcData* const pd)
 {
     return pd->output;
+}
+
+static inline uint16_t potGetPhysicalPosition(PotProcData* const pd)
+{
+    return pd->pot_position;
 }
 
 static inline void potLockOnIncomingValue(PotProcData* const pd, const uint16_t value14b)
